@@ -27,6 +27,60 @@
   `6022061732693C463402FDE264B4466986C6515BD52B37E87BFB740F6489AACB`；
   BIN：`F4167B9A5CE1175B078BE809F832394BB4D8DD31DE721085DEDDBF752C9B0FCD`。
 
+### 后续可选实验：用ISERDESE2提高到480 MS/s
+
+该实验已经完成可行性调研，但本里程碑**暂不实施**。当前工程并非低速采样：
+`clk_rf=120 MHz`，由`IDDR`双沿取得两个连续样本，有效采样率已经是
+**240 MS/s**。Dawsonjon/FPGA-radio从100 MS/s提升到200 MS/s的IDDR阶段已经
+被本工程超过；可继续借鉴的是其后续“高速ISERDES采样、低速并行处理”架构。
+
+推荐先做保守的480 MS/s版本：
+
+```text
+MMCM：240 MHz高速采样时钟 + 120 MHz并行逻辑时钟
+  → ISERDESE2，DDR、DATA_WIDTH=4
+  → 每个120 MHz周期输出4个连续1-bit样本
+  → 4相NCO混频
+  → 每周期处理4样本的CIC3，仍抽取到960 kS/s
+  → 现有信道FIR、鉴频、48 kS/s音频和以太网链路
+```
+
+XC7A50T-1的Artix-7数据手册给出DDR LVDS接收最高950 Mb/s，ISERDESE2支持
+DDR 4/6/8位并行输出，因此480 MS/s在器件标称数字接口能力内。不过这里采样的
+是异步模拟过零信号，不是带数据眼的源同步LVDS，950 Mb/s不能视作ADC性能保证；
+首版不要直接挑战800～950 MS/s。参考资料：
+
+- Dawsonjon FPGA-radio：`https://github.com/dawsonjon/FPGA-radio`
+- AMD Artix-7 DS181：
+  `https://docs.amd.com/api/khub/documents/iAkxxTOk96ANLJqYf2hgrQ/content`
+- AMD UG471/ISERDESE2：
+  `https://docs.amd.com/api/khub/documents/IbGcnPFe6eF19RHma_Y~IA/content`
+
+若输入噪声样本近似独立，240→480 MS/s的理想处理增益仅为
+`10*log10(480/240)=3.01 dB`；实际还可能因LVDS门限噪声、相邻样本相关性、
+时钟抖动、亚稳态和宽带干扰而更低。因此它是一个无需改焊接、兼具诊断价值的
+小幅优化，不应被当作替代预选滤波器和RF增益的根治方案。
+
+实施时必须同时修改并验证：
+
+1. 用正确的`BUFIO/BUFR`或等效专用时钟路径驱动ISERDESE2，并约束其与
+   J20/J21所在I/O bank、clock region及MMCM的放置关系；不能继续把RF输入简单
+   设为全局false path后就假定高速采样可靠。
+2. 将`nco_mixer_2x.sv`改为4相NCO/混频器，四个相位依次相差一个480 MS/s
+   采样周期；每个120 MHz周期相位累加四次。
+3. 将`cic3_decimator_2x.sv`改为精确的4样本look-ahead结构，并把抽取参数从
+   125对调整为125组四样本，使输出仍为960 kS/s。重新核算累加位宽和缩放，
+   保持后级FIR系数及48 kS/s链路不变。
+4. 将RTL初始NCO常数、`host/tune_radio.py`、`host/scan_radio.py`和仿真中的
+   RF采样率统一从240 MHz改为480 MHz，避免调谐频率整体错误。
+5. 先做仿真和静态时序，再烧录；不需要改变现有天线、1 nF、100 Ω、1 kΩ和
+   1 MΩ接线。
+
+验收不能只凭“声音似乎变了”。在95.0、96.0静音台、96.8和94.7空白点各采集
+同长度数据，对比240/480 MS/s两版的丢包、RF一密度/跳变密度、信道
+`|I|+|Q|`、PCM RMS及主观音质。若目标台相对空白点改善接近2～3 dB，则保留；
+若不足约1 dB，说明主要瓶颈仍在模拟前端，不值得继续冲击800 MS/s。
+
 下方保留的是研发历史，遇到冲突时以上述最新里程碑和中文README为准。
 
 Last updated: 2026-10-17 15:25 (Asia/Shanghai)
