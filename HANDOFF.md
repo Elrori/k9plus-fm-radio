@@ -1,4 +1,33 @@
-# K9+ FM radio handoff
+# K9+ FPGA 1-bit FM 收音机交接单
+
+## 最新里程碑（2026-10-17 19:00，Asia/Shanghai）
+
+本节覆盖下方历史记录中的旧频率、旧位流哈希和“尚未烧录”等描述。
+
+- 当前位流已经通过JTAG烧录，最后通过网口调到 **95.0 MHz**。无需重新编译：
+  `python host\tune_radio.py 95.0 --bind 169.254.172.8`（UDP 50001）。
+- 细扫确认电台中心正好位于95.000和96.800 MHz，音质问题不是NCO频偏造成的。
+- UDP状态字轮流发送原始RF密度、RGMII RX状态和信道幅度；
+  `host/probe_packets.py`可以同时解码。
+- 实测：95.0音乐台信道约626/2183、PCM RMS约4438；96.0强静音载波约
+  4224/8841、PCM RMS约275；94.7空白点约358/1124、PCM RMS约3972。
+  传输、调谐和解调均正常，音乐台的射频载噪比才是当前主要瓶颈。
+- `rtl/fm_discriminator.sv`现为复相关dot/cross分别CIC3抽取20:1后再做
+  CORDIC atan2。空白点PCM RMS由约5495降至3972，改善约2.8 dB。
+- `rtl/complex_fir.sv`在101个历史样本填满前不输出，避免启动未知值污染CIC。
+- 当前实装前端：RF_P经1 kΩ接VBIAS、经1 MΩ接3.3 V；RF_N直连VBIAS；
+  拉杆经1 nF C0G和100 Ω接RF_P。实测VBIAS/RF_N/RF_P为
+  1.189/1.189/1.191 V。1 MΩ使占空比从约0.3变为约0.6，方向正确但略过量，
+  不应直接删除。完整复现接线见 `hardware/WIRING.md`。
+- 下一步门限试验是在现有1 MΩ前串470 kΩ，使总值约1.47 MΩ，以空白点
+  `rf_ones=0.48～0.52`为目标；该470 kΩ当前尚未安装。之后再做96 MHz
+  LC预选器，并视许可加入10～15 dB低噪声RF增益。
+- 当前构建通过仿真、布线、DRC和时序；WNS +0.148 ns、WHS +0.019 ns。
+- 位流SHA-256：
+  `6022061732693C463402FDE264B4466986C6515BD52B37E87BFB740F6489AACB`；
+  BIN：`F4167B9A5CE1175B078BE809F832394BB4D8DD31DE721085DEDDBF752C9B0FCD`。
+
+下方保留的是研发历史，遇到冲突时以上述最新里程碑和中文README为准。
 
 Last updated: 2026-10-17 15:25 (Asia/Shanghai)
 

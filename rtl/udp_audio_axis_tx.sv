@@ -6,6 +6,8 @@ module udp_audio_axis_tx (
     input  logic               sample_clipped,
     input  logic [31:0]        tuned_hz,
     input  logic [31:0]        rf_stats,
+    input  logic [31:0]        rx_debug,
+    input  logic [31:0]        channel_stats,
     output logic [7:0]         axis_data,
     output logic               axis_valid,
     input  logic               axis_ready,
@@ -20,6 +22,7 @@ module udp_audio_axis_tx (
     logic packet_ready;
     logic [9:0] byte_index;
     logic [31:0] packet_sequence, latched_tune, latched_status;
+    logic [7:0] latched_flags;
     integer payload_offset;
     integer sample_index;
 
@@ -75,7 +78,7 @@ module udp_audio_axis_tx (
             payload_offset = byte_index - 42;
             case (payload_offset)
                 0: axis_data=8'h4b; 1: axis_data=8'h39; 2: axis_data=8'h46; 3: axis_data=8'h4d;
-                4: axis_data=8'h01; 5: axis_data=8'h02;
+                4: axis_data=8'h01; 5: axis_data=latched_flags;
                 6: axis_data=8'h00; 7: axis_data=8'h01;
                 8: axis_data=packet_sequence[7:0];
                 9: axis_data=packet_sequence[15:8];
@@ -110,6 +113,7 @@ module udp_audio_axis_tx (
             packet_count <= 0;
             latched_tune <= 100_100_000;
             latched_status <= 0;
+            latched_flags <= 0;
             dropped_samples <= 0;
         end else begin
             if (sample_valid) begin
@@ -131,7 +135,11 @@ module udp_audio_axis_tx (
                 packet_ready <= 0;
                 byte_index <= 0;
                 latched_tune <= tuned_hz;
-                latched_status <= rf_stats;
+                case (packet_count[1:0])
+                    2'd1: begin latched_status <= rx_debug;      latched_flags <= 8'h02; end
+                    2'd3: begin latched_status <= channel_stats; latched_flags <= 8'h04; end
+                    default: begin latched_status <= rf_stats;   latched_flags <= 8'h01; end
+                endcase
                 packet_sequence <= packet_count;
                 packet_count <= packet_count + 1'b1;
             end else if (active && axis_ready) begin

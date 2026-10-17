@@ -22,8 +22,6 @@ module tb_fm_chain;
     logic signed [23:0] filter_i, filter_q;
     logic discriminator_valid;
     logic signed [31:0] phase_q28;
-    logic decimator_valid;
-    logic signed [31:0] audio_raw;
     logic pcm_valid;
     logic signed [15:0] pcm;
     logic clipped;
@@ -68,15 +66,9 @@ module tb_fm_chain;
         .valid_out(discriminator_valid), .phase_q28(phase_q28)
     );
 
-    cic3_decimator audio_decimator (
-        .clk(clk), .rst(rst), .valid_in(discriminator_valid),
-        .sample_in(phase_q28), .valid_out(decimator_valid),
-        .sample_out(audio_raw)
-    );
-
     audio_post postprocess (
-        .clk(clk), .rst(rst), .valid_in(decimator_valid),
-        .sample_in(audio_raw), .mute(1'b0),
+        .clk(clk), .rst(rst), .valid_in(discriminator_valid),
+        .sample_in(phase_q28), .mute(1'b0),
         .valid_out(pcm_valid), .pcm_out(pcm), .clipped(clipped)
     );
 

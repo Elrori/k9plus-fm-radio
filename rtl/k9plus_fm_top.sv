@@ -174,6 +174,41 @@ module k9plus_fm_top (
         .valid_out(channel_valid), .i_out(channel_i), .q_out(channel_q)
     );
 
+    // Channel-envelope telemetry for distinguishing a captured FM carrier
+    // from discriminator threshold noise.  Values are average and peak
+    // |I|+|Q| over 256 channel samples, both scaled down by 512.
+    wire [23:0] channel_abs_i = channel_i[23] ? (~channel_i + 1'b1) : channel_i;
+    wire [23:0] channel_abs_q = channel_q[23] ? (~channel_q + 1'b1) : channel_q;
+    wire [24:0] channel_mag_now = {1'b0, channel_abs_i} + {1'b0, channel_abs_q};
+    logic [7:0] channel_stat_count;
+    logic [32:0] channel_mag_acc;
+    logic [24:0] channel_mag_peak;
+    logic [31:0] channel_stats_hold;
+    wire [32:0] channel_mag_acc_next = channel_mag_acc + channel_mag_now;
+    always_ff @(posedge clk_rf) begin
+        if (rf_rst) begin
+            channel_stat_count <= 0;
+            channel_mag_acc <= 0;
+            channel_mag_peak <= 0;
+            channel_stats_hold <= 0;
+        end else if (channel_valid) begin
+            if (channel_stat_count == 8'hff) begin
+                channel_stats_hold[31:16] <= channel_mag_acc_next[32] ?
+                    16'hffff : {1'b0, channel_mag_acc_next[31:17]};
+                channel_stats_hold[15:0] <= (channel_mag_now > channel_mag_peak ?
+                    channel_mag_now : channel_mag_peak) >> 9;
+                channel_stat_count <= 0;
+                channel_mag_acc <= 0;
+                channel_mag_peak <= 0;
+            end else begin
+                channel_stat_count <= channel_stat_count + 1'b1;
+                channel_mag_acc <= channel_mag_acc_next;
+                if (channel_mag_now > channel_mag_peak)
+                    channel_mag_peak <= channel_mag_now;
+            end
+        end
+    end
+
     wire discriminator_valid;
     wire signed [31:0] phase_q28;
     fm_discriminator discriminator (
@@ -181,17 +216,10 @@ module k9plus_fm_top (
         .i_in(channel_i), .q_in(channel_q), .valid_out(discriminator_valid), .phase_q28
     );
 
-    wire audio_cic_valid;
-    wire signed [31:0] audio_cic;
-    cic3_decimator audio_decimator (
-        .clk(clk_rf), .rst(rf_rst), .valid_in(discriminator_valid), .sample_in(phase_q28),
-        .valid_out(audio_cic_valid), .sample_out(audio_cic)
-    );
-
     wire pcm_valid_rf, pcm_clipped_rf;
     wire signed [15:0] pcm_rf;
     audio_post audio (
-        .clk(clk_rf), .rst(rf_rst), .valid_in(audio_cic_valid), .sample_in(audio_cic),
+        .clk(clk_rf), .rst(rf_rst), .valid_in(discriminator_valid), .sample_in(phase_q28),
         .mute(!key_sync_1[2]), .valid_out(pcm_valid_rf), .pcm_out(pcm_rf), .clipped(pcm_clipped_rf)
     );
 
@@ -213,6 +241,7 @@ module k9plus_fm_top (
     (* ASYNC_REG = "TRUE" *) logic clip_meta, clip_sync;
     (* ASYNC_REG = "TRUE" *) logic [31:0] tune_meta, tune_sync;
     (* ASYNC_REG = "TRUE" *) logic [31:0] stats_meta, stats_sync;
+    (* ASYNC_REG = "TRUE" *) logic [31:0] channel_stats_meta, channel_stats_sync;
     logic pcm_valid_eth;
     always_ff @(posedge clk_eth) begin
         pcm_toggle_meta <= pcm_toggle_rf; pcm_toggle_sync <= pcm_toggle_meta;
@@ -220,6 +249,7 @@ module k9plus_fm_top (
         clip_meta <= clip_hold_rf; clip_sync <= clip_meta;
         tune_meta <= tuned_hz; tune_sync <= tune_meta;
         stats_meta <= rf_stats_hold; stats_sync <= stats_meta;
+        channel_stats_meta <= channel_stats_hold; channel_stats_sync <= channel_stats_meta;
         if (eth_rst) begin pcm_toggle_seen <= pcm_toggle_sync; pcm_valid_eth <= 0; end
         else begin
             pcm_valid_eth <= (pcm_toggle_sync != pcm_toggle_seen);
@@ -234,7 +264,8 @@ module k9plus_fm_top (
     udp_audio_axis_tx packetizer (
         .clk(clk_eth), .rst(eth_rst),
         .sample_valid(pcm_valid_eth), .sample(pcm_sync), .sample_clipped(clip_sync),
-        .tuned_hz(tune_sync), .rf_stats(net_rx_debug), .axis_data(eth_frame_byte),
+        .tuned_hz(tune_sync), .rf_stats(stats_sync), .rx_debug(net_rx_debug),
+        .channel_stats(channel_stats_sync), .axis_data(eth_frame_byte),
         .axis_valid(eth_frame_valid), .axis_ready(eth_frame_ready),
         .axis_last(eth_frame_last),
         .active(tx_active), .packet_count, .dropped_samples

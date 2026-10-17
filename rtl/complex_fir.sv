@@ -17,6 +17,8 @@ module complex_fir #(
     (* ram_style = "block" *) logic signed [SAMPLE_WIDTH-1:0] hist_q [0:127];
     (* rom_style = "block" *) logic signed [COEFF_WIDTH-1:0] coeff [0:TAPS-1];
     logic [6:0] write_ptr, read_ptr, issue_count;
+    logic [6:0] history_count;
+    logic history_full;
     logic busy, issue_valid, issue_last, product_valid, product_last;
     logic signed [SAMPLE_WIDTH-1:0] data_i_pipe, data_q_pipe;
     logic signed [COEFF_WIDTH-1:0] coeff_pipe;
@@ -46,6 +48,7 @@ module complex_fir #(
     always_ff @(posedge clk) begin
         if (rst) begin
             write_ptr <= 0; read_ptr <= 0; issue_count <= 0; busy <= 0;
+            history_count <= 0; history_full <= 0;
             issue_valid <= 0; issue_last <= 0; product_valid <= 0; product_last <= 0;
             data_i_pipe <= 0; data_q_pipe <= 0; coeff_pipe <= 0;
             product_i <= 0; product_q <= 0; acc_i <= 0; acc_q <= 0;
@@ -65,7 +68,7 @@ module complex_fir #(
                 if (product_last) begin
                     i_out <= sat_sample(sum_i);
                     q_out <= sat_sample(sum_q);
-                    valid_out <= 1;
+                    valid_out <= history_full;
                     acc_i <= 0; acc_q <= 0;
                     busy <= 0;
                 end else begin
@@ -95,6 +98,12 @@ module complex_fir #(
                 issue_count <= 0;
                 acc_i <= 0; acc_q <= 0;
                 busy <= 1;
+                if (!history_full) begin
+                    if (history_count == TAPS-1)
+                        history_full <= 1;
+                    else
+                        history_count <= history_count + 1'b1;
+                end
             end
         end
     end

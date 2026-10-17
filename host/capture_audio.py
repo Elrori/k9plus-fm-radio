@@ -64,6 +64,10 @@ def main() -> None:
     if flags & 1:
         status_text = (f"rf_ones={(status >> 16)/65535.0:.4f} "
                        f"rf_transitions={(status & 0xffff)/65535.0:.4f}")
+    elif flags & 4:
+        status_text = f"channel_avg={status >> 16} channel_peak={status & 0xffff}"
+    elif flags & 2:
+        status_text = f"rx_debug=0x{status:08x}"
     print(
         f"CAPTURE_PASS packets={len(sequences)} missing={missing} station={station}Hz "
         f"{status_text} samples={len(pcm)} rms={np.sqrt(np.mean(centered**2)):.1f} "

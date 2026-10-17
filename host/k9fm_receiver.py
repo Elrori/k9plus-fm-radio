@@ -56,6 +56,36 @@ class BiquadLowpass:
         return output
 
 
+class BiquadHighpass:
+    """Second-order Butterworth high-pass for hum/wander rejection."""
+
+    def __init__(self, cutoff: float) -> None:
+        cosine = math.cos(2.0 * math.pi * cutoff / RATE)
+        sine = math.sin(2.0 * math.pi * cutoff / RATE)
+        alpha = sine / math.sqrt(2.0)
+        a0 = 1.0 + alpha
+        self.coefficients = [
+            (1.0 + cosine) / (2.0 * a0),
+            -(1.0 + cosine) / a0,
+            (1.0 + cosine) / (2.0 * a0),
+            -2.0 * cosine / a0,
+            (1.0 - alpha) / a0,
+        ]
+        self.z1 = self.z2 = 0.0
+
+    def process(self, block: np.ndarray) -> np.ndarray:
+        b0, b1, b2, a1, a2 = self.coefficients
+        output = np.empty_like(block)
+        z1, z2 = self.z1, self.z2
+        for index, value in enumerate(block):
+            result = b0 * value + z1
+            z1 = b1 * value - a1 * result + z2
+            z2 = b2 * value - a2 * result
+            output[index] = result
+        self.z1, self.z2 = z1, z2
+        return output
+
+
 class SharedAudio:
     def __init__(self, seconds: int = 4) -> None:
         self.lock = threading.Lock()
@@ -67,6 +97,8 @@ class SharedAudio:
         self.fpga_drops = 0
         self.rf_ones = 0.0
         self.rf_transitions = 0.0
+        self.channel_average = 0
+        self.channel_peak = 0
         self.last_packet = 0.0
 
     def append(self, pcm: np.ndarray, sequence: int, station_hz: int,
@@ -81,7 +113,10 @@ class SharedAudio:
                 self.rf_ones = (status >> 16) / 65535.0
                 self.rf_transitions = (status & 0xffff) / 65535.0
                 self.fpga_drops = 0
-            else:
+            elif flags & 4:
+                self.channel_average = status >> 16
+                self.channel_peak = status & 0xffff
+            elif flags == 0:
                 self.fpga_drops = status
             self.last_packet = time.monotonic()
             self.playback.extend(values)
@@ -118,7 +153,9 @@ def main() -> None:
     parser.add_argument("--bind", default="0.0.0.0", help="local IPv4 address (default: all)")
     parser.add_argument("--device", help="sounddevice output index or substring")
     parser.add_argument("--no-audio", action="store_true", help="display only")
-    parser.add_argument("--lowpass", type=float, default=6000.0,
+    parser.add_argument("--highpass", type=float, default=90.0,
+                        help="second-order audio high-pass cutoff in Hz; 0 disables")
+    parser.add_argument("--lowpass", type=float, default=4500.0,
                         help="fourth-order audio low-pass cutoff in Hz; 0 disables")
     parser.add_argument("--list-devices", action="store_true")
     args = parser.parse_args()
@@ -139,7 +176,12 @@ def main() -> None:
     receiver.start()
 
     stream = None
-    lowpass = BiquadLowpass(args.lowpass) if 0 < args.lowpass < RATE / 2 else None
+    filter_state = {
+        "lowpass": BiquadLowpass(args.lowpass) if 0 < args.lowpass < RATE / 2 else None,
+        "highpass": BiquadHighpass(args.highpass) if 0 < args.highpass < RATE / 2 else None,
+        "low_hz": args.lowpass,
+        "high_hz": args.highpass,
+    }
     if not args.no_audio:
         if sd is None:
             raise SystemExit("sounddevice is not installed; use --no-audio or install requirements")
@@ -150,6 +192,10 @@ def main() -> None:
                 take = min(frames, len(shared.playback))
                 for index in range(take):
                     block[index] = shared.playback.popleft()
+            highpass = filter_state["highpass"]
+            lowpass = filter_state["lowpass"]
+            if highpass is not None:
+                block = highpass.process(block)
             if lowpass is not None:
                 block = lowpass.process(block)
             outdata[:, 0] = block
@@ -172,6 +218,23 @@ def main() -> None:
     spectrum_axis.grid(True, alpha=0.25)
     figure.tight_layout()
 
+    def select_filter(event) -> None:
+        presets = {
+            "0": (0.0, 0.0),       # diagnostic: completely raw audio
+            "1": (75.0, 6000.0),  # wide/music
+            "2": (90.0, 4500.0),  # clear/default
+            "3": (100.0, 3500.0), # narrow/weak speech
+        }
+        if event.key not in presets:
+            return
+        high_hz, low_hz = presets[event.key]
+        filter_state["highpass"] = BiquadHighpass(high_hz) if high_hz else None
+        filter_state["lowpass"] = BiquadLowpass(low_hz) if low_hz else None
+        filter_state["high_hz"] = high_hz
+        filter_state["low_hz"] = low_hz
+
+    figure.canvas.mpl_connect("key_press_event", select_filter)
+
     def update(_frame):
         with shared.lock:
             values = np.asarray(shared.display, dtype=np.float64)
@@ -180,6 +243,8 @@ def main() -> None:
             drops = shared.fpga_drops
             rf_ones = shared.rf_ones
             rf_transitions = shared.rf_transitions
+            channel_average = shared.channel_average
+            channel_peak = shared.channel_peak
             age = time.monotonic() - shared.last_packet if shared.last_packet else 999.0
         wave_line.set_ydata(values[-wave_count:])
         transform = np.fft.rfft(values[-fft_size:] * window)
@@ -189,7 +254,9 @@ def main() -> None:
         wave_axis.set_title(
             f"K9+ FM {station/1e6:.1f} MHz | {state} | lost={lost} "
             f"ones={rf_ones:.3f} transitions={rf_transitions:.3f} "
-            f"LP={args.lowpass:g}Hz drop={drops}"
+            f"channel={channel_average}/{channel_peak} "
+            f"HP/LP={filter_state['high_hz']:g}/{filter_state['low_hz']:g}Hz "
+            f"[0 raw, 1 wide, 2 clear, 3 narrow] drop={drops}"
         )
         return wave_line, spectrum_line
 

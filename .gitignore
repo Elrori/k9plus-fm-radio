@@ -1,5 +1,11 @@
 /build/
 /xsim.dir/
+/.Xil/
+/.claude/
+/mem/
+__pycache__/
+*.pyc
+/tight_setup_hold_pins.txt
 /*.jou
 /*.log
 /*.pb

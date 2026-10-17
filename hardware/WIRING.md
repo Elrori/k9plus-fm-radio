@@ -1,71 +1,118 @@
-# Passive antenna frontend wiring
+# 当前拉杆天线阻容前端接线
 
-## U4 orientation and pins
+本文记录 2026-10-17 里程碑版本的**实际已焊电路**，用于以后原样复现。
+尚未实施的优化单独放在文末，不能与当前电路混淆。
 
-With `U4` upright/readable on the published baseboard drawing, pin 1 is upper
-left, pin 2 upper right, odd pins run down the left and even pins down the right.
+## U4 方向与引脚
 
-| Signal | U4 pin | FPGA ball |
+按公开底板图中 U4 字样正向可读时：1脚在左上，2脚在右上；左侧为奇数脚，
+右侧为偶数脚。
+
+| 信号 | U4 引脚 | FPGA 管脚 |
 |---|---:|---|
 | RF_P | 8 | J20 |
 | RF_N | 12 | J21 |
 | 3.3 V | 38 | -- |
-| GND | 37, 39, or 40 | -- |
+| GND | 37、39或40 | -- |
 
-Verify the 3.3 V and GND pins with a meter before connecting the network.
+接线前必须用万用表确认3.3 V和GND，不要只依赖接插件方向。
 
-## Circuit
+## 当前实际电路
 
 ```text
-3.3V (U4-38) -- 1.8k --+-- 1.0k -- GND
-                        |
-                     VBIAS ~= 1.18V
-                        |
-                  100nF || 1uF
-                        |
-                       GND
+3.3V (U4-38) ── RBIAS_TOP 1.8kΩ ──+── RBIAS_BOTTOM 1.0kΩ ── GND
+                                    |
+                                 VBIAS ≈ 1.189V
+                                    |
+                              100nF || 1µF
+                                    |
+                                   GND
 
-antenna/coax centre -- 1nF C0G -- 100R --+-- RF_P (U4-8)
-                                           |
-                                           1k
-                                           |
-                                         VBIAS
+拉杆天线 ── CRF 1nF C0G ── RSER 100Ω ──+── RF_P (U4-8 / J20)
+                                          |
+                                          +── RRETURN 1kΩ ── VBIAS
+                                          |
+                                          +── RTHRESH 1MΩ ── 3.3V
 
-RF_N (U4-12) ----------------------------- VBIAS
-coax shield / other dipole arm ----------- GND (U4-37/39/40)
+RF_N (U4-12 / J21) ──────────────────────── VBIAS
+拉杆底座/射频回流 ───────────────────────── GND (U4-37/39/40)
 ```
 
-Use 1% resistors. Put the 1 nF, 100 ohm, and 1 kohm parts within 1--2 cm of
-U4-8. Put both VBIAS capacitors close to U4-12. Keep RF_P/RF_N stubs short.
-Do **not** fit a 100 ohm resistor between RF_P and RF_N: external differential
-termination is for a real LVDS driver, not this analog-comparator connection.
+当前拉杆长度约70～80 cm。它是唯一的接收天线；板地、供电线和其他连接会
+共同形成不理想的射频回流路径。
 
-## Antenna
+## 1 MΩ 门限补偿的来历
 
-For the connected telescopic antenna, extend it to roughly 70--80 cm and connect
-its feed to the 1 nF input capacitor. Add a 70--80 cm wire from board GND in the
-opposite direction as a counterpoise. Keep the board away from the PC chassis and
-move/rotate the whip for best reception.
-A half-wave dipole (two 72--78 cm arms) is a useful later improvement: coax centre
-feeds the R/C input and the shield goes to board GND. Either arrangement is a
-simple unbalanced feed, not an optimized balun.
+RTHRESH 不是普通上拉，也不是可以随意省略的元件：
 
-Never use an outdoor/roof/long-wire antenna with this circuit. It has no surge
-arrester or clamp diode. Disconnect the antenna during thunderstorms and before
-handling the board.
+- 未安装 RTHRESH 时，FPGA 原始1-bit数据的“1”占比约为0.3；
+- 安装 RF_P→3.3 V 的1 MΩ后，“1”占比约为0.6；
+- 安装后实测 RF_P=1.191 V、RF_N=1.189 V，约2 mV差值与理论相符。
 
-## Pre-power checks
+这说明 FPGA LVDS 输入存在需要补偿的固有门限偏差。1 MΩ方向正确，但当前
+补偿略过量。软件通过 UDP 遥测报告 `rf_ones`，今后应以该值调门限，不能只看
+万用表，因为需要调整的是毫伏以下的有效比较门限。
 
-1. Power off: 3.3 V to GND is not shorted; RF_P to RF_N is not shorted.
-2. Power on without antenna: VBIAS is about 1.18 V.
-3. RF_P and RF_N DC voltage are both about 1.18 V.
-4. If any node is below 0.9 V or above 1.4 V, power off and correct wiring.
+## 元件与布局要求
 
-This frontend is intentionally R/C-only. It cannot provide RF gain, a selective
-FM band-pass, lightning protection, or commercial-tuner blocker performance.
+- 1.8 kΩ、1.0 kΩ、1 kΩ和100 Ω优先使用1%器件；
+- CRF 使用1 nF C0G/NP0，不使用高介电常数陶瓷替代；
+- 100 nF与1 µF偏置去耦放在RF_N/VBIAS附近；
+- 1 nF、100 Ω、1 kΩ和1 MΩ尽量放在U4-8附近，连接总长度控制在1～2 cm；
+- RF_P和RF_N支线必须短，避免杜邦线绕圈；
+- 当前连接方式下不要在RF_P与RF_N之间加100 Ω差分终端；
+- FPGA约束保持 `LVDS_25`、`DIFF_TERM=FALSE`。
 
-The first prototype used 51 ohms from RF_P to VBIAS. Live recordings at 100.1
-and 96.8 MHz were statistically indistinguishable threshold noise, and touching
-the whip had no useful effect. The 1 kohm revision reduces passive loading while
-retaining a defined DC bias; the counterpoise reduces dependence on noisy
-board/cable ground as the antenna return.
+## 上电检查
+
+1. 断电测量3.3 V到GND无短路；
+2. 断电确认RF_P与RF_N之间不是直接短路；
+3. 上电后VBIAS应约为1.18～1.19 V；
+4. 当前1 MΩ版本中RF_P应比RF_N高约2 mV；
+5. 任一输入低于0.9 V或高于1.4 V时立即断电检查；
+6. 运行 `python host\probe_packets.py --count 40`，确认UDP无丢包并记录
+   `rf_ones`、`rf_transitions`和`channel_mag`。
+
+里程碑实测值：
+
+```text
+VBIAS = 1.189V
+RF_N  = 1.189V
+RF_P  = 1.191V
+rf_ones 通常约 0.60～0.63（随接收环境变化）
+```
+
+## 安全事项
+
+当前前端没有静电钳位、浪涌保护或雷击保护。只允许室内拉杆天线：
+
+- 不连接室外天线、楼顶天线或长导线；
+- 雷雨时断开天线；
+- 调整或焊接前先断电并释放人体静电；
+- 不让拉杆接触市电设备、金属窗框或其他带电物体。
+
+## 尚未实施的下一步方案
+
+### 1. 精调门限
+
+计划在原1 MΩ前串联470 kΩ，使RF_P到3.3 V的总阻值约为1.47 MΩ：
+
+```text
+RF_P ── 1MΩ ── 470kΩ ── 3.3V
+```
+
+目标是在邻近空白频点把 `rf_ones` 调到约0.48～0.52。该470 kΩ当前没有安装，
+不能写入当前BOM的“已装数量”。
+
+### 2. 约96 MHz LC预选
+
+允许电感后，可在拉杆与现有隔直输入之间增加可调谐回路。起始试验值为
+100 nH配合总电容约27 pF，对应理论谐振频率约96.9 MHz。实际需要微调电容
+补偿拉杆、布线和FPGA输入寄生，并以96.0 MHz强静音载波的
+`channel_mag_avg`最大为调谐依据。
+
+### 3. 射频增益
+
+若允许有源器件，可在预选器后增加约10～15 dB低噪声增益，再经隔直电容和
+100 Ω串联电阻送入RF_P。增益、偏置和过载必须通过遥测逐步验证，不能直接接
+高增益宽带模块。

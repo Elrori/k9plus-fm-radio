@@ -1,8 +1,12 @@
 reference,quantity,value,type,notes
 RBIAS_TOP,1,1.8 kohm 1%,resistor,3V3 to VBIAS
 RBIAS_BOTTOM,1,1.0 kohm 1%,resistor,VBIAS to GND
-RTERM,1,51 ohm 1%,resistor,RF_P to VBIAS
+RRETURN,1,1.0 kohm 1%,resistor,RF_P to VBIAS; fitted in current milestone
+RTHRESH,1,1.0 Mohm,resistor,RF_P to 3V3 threshold compensation; fitted in current milestone
 RSER,1,100 ohm 1%,resistor,antenna coupling capacitor to RF_P
 CBIAS_HF,1,100 nF X7R,capacitor,VBIAS bypass
 CBIAS_LF,1,1 uF X7R,capacitor,VBIAS bypass
 CRF,1,1 nF C0G,capacitor,series RF AC coupling
+RTHRESH_TRIM,0,470 kohm,resistor,future option in series with RTHRESH; not currently fitted
+LPRESELECT,0,100 nH high-Q,inductor,future approximately 96 MHz preselector; not currently fitted
+CPRESELECT,0,5-30 pF trimmer,capacitor,future approximately 96 MHz preselector; not currently fitted
