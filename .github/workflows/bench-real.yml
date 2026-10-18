@@ -1,0 +1,29 @@
+name: K9 1-bit RF offline DSP benchmark
+on:
+  push:
+    branches:
+      - analysis/onebit-fm-benchmark-20261018
+  workflow_dispatch:
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install numerical dependencies
+        run: python -m pip install numpy scipy
+      - name: Benchmark committed raw capture
+        run: python -u tests/bench_1bit_real.py
+      - name: Known-tone synthetic FM sweep
+        run: python -u tests/bench_1bit_synthetic.py
+      - name: Install SystemVerilog simulator
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
+      - name: Exercise lag1 / lag2 synthesizable discriminator RTL
+        run: |
+          iverilog -g2012 -s tb_fm_discriminator_lag -o /tmp/k9_lag.vvp \
+            rtl/fm_discriminator.sv rtl/cic3_decimator.sv \
+            tests/ref_fm_discriminator_20261018.sv tests/tb_fm_discriminator_lag.sv
+          vvp /tmp/k9_lag.vvp

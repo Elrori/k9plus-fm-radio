@@ -1,5 +1,7 @@
 module fm_discriminator #(
-    parameter integer DECIMATION = 20
+    parameter integer DECIMATION = 20,
+    // 1 preserves the proven baseline. 2 is an experimental 2-IF-sample correlator.
+    parameter integer CORR_LAG = 1
 ) (
     input  logic                    clk,
     input  logic                    rst,
@@ -13,8 +15,9 @@ module fm_discriminator #(
     // components, and only then perform atan2. Filtering before the nonlinear
     // operation prevents much of the weak-signal threshold noise from becoming
     // irreversible phase impulses.
-    logic have_previous, product_pending, busy;
+    logic have_previous, have_older, product_pending, busy;
     logic signed [23:0] i_previous, q_previous;
+    logic signed [23:0] i_older, q_older;
     logic signed [47:0] product_ii, product_qq, product_iq, product_qi;
     logic corr_valid;
     logic signed [48:0] corr_dot, corr_cross;
@@ -53,8 +56,10 @@ module fm_discriminator #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            have_previous <= 0; product_pending <= 0; corr_valid <= 0; busy <= 0;
+            have_previous <= 0; have_older <= 0;
+            product_pending <= 0; corr_valid <= 0; busy <= 0;
             valid_out <= 0; phase_q28 <= 0; i_previous <= 0; q_previous <= 0;
+            i_older <= 0; q_older <= 0;
             product_ii <= 0; product_qq <= 0; product_iq <= 0; product_qi <= 0;
             corr_dot <= 0; corr_cross <= 0;
             x <= 0; y <= 0; z <= 0; iteration <= 0;
@@ -66,15 +71,19 @@ module fm_discriminator #(
                 // synthesis translate_off
                 if (product_pending) $fatal(1, "FM discriminator product overrun");
                 // synthesis translate_on
-                if (have_previous) begin
-                    product_ii <= i_previous * i_in;
-                    product_qq <= q_previous * q_in;
-                    product_iq <= i_previous * q_in;
-                    product_qi <= q_previous * i_in;
+                if ((CORR_LAG == 1 && have_previous) ||
+                    (CORR_LAG == 2 && have_older)) begin
+                    product_ii <= (CORR_LAG == 2 ? i_older : i_previous) * i_in;
+                    product_qq <= (CORR_LAG == 2 ? q_older : q_previous) * q_in;
+                    product_iq <= (CORR_LAG == 2 ? i_older : i_previous) * q_in;
+                    product_qi <= (CORR_LAG == 2 ? q_older : q_previous) * i_in;
                     product_pending <= 1;
                 end
+                i_older <= i_previous;
+                q_older <= q_previous;
                 i_previous <= i_in;
                 q_previous <= q_in;
+                have_older <= have_previous;
                 have_previous <= 1;
             end else if (product_pending) begin
                 corr_dot <= product_ii + product_qq;
@@ -108,7 +117,8 @@ module fm_discriminator #(
                 end
                 x <= next_x; y <= next_y; z <= next_z;
                 if (iteration == 17) begin
-                    phase_q28 <= next_z[31:0];
+                    // Normalize 2-sample phase accumulation back to one IF interval.
+                    phase_q28 <= CORR_LAG == 2 ? (next_z >>> 1) : next_z[31:0];
                     valid_out <= 1;
                     busy <= 0;
                 end else begin
