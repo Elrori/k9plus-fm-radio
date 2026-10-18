@@ -37,10 +37,11 @@ def audio_1bit_iq(bits,fc):
     m=min(len(i),len(q))
     return i[:m]+1j*q[:m]
 
-def pcm(iq,cut,lag):
+def pcm(iq,cut,lag,filter_kind='cic'):
     x=signal.lfilter(fir(cut),[1.],iq)
     p=x[lag:]*np.conj(x[:-lag])
-    pp=signal.upfirdn(cic(20),p,down=20)
+    h2=cic(20) if filter_kind=='cic' else signal.firwin(241,16000,fs=IF,window=('kaiser',7.5))
+    pp=signal.upfirdn(h2,p,down=20)
     d=np.angle(pp)/lag
     dc=signal.lfilter([1/128.],[1,-127/128],d)
     return signal.lfilter([0.328125],[1,-0.671875],d-dc),np.abs(pp)
@@ -69,10 +70,10 @@ def main():
     for fc in [94_700_000,95_000_000,96_000_000,96_800_000]:
         iq=audio_1bit_iq(bits,fc)
         result[str(fc)]={}
-        for name,cut,lag in [('rtl_ref',85000,1),('narrow70',70000,1),
-                              ('lag2',85000,2),('lag4',85000,4),
-                              ('narrow70_lag4',70000,4)]:
-            sound,amp=pcm(iq,cut,lag)
+        for name,cut,lag,filter_kind in [('rtl_ref',85000,1,'cic'),('narrow70',70000,1,'cic'),
+                              ('lag2',85000,2,'cic'),('lag4',85000,4,'cic'),
+                              ('narrow70_lag4',70000,4,'cic'),('fir_corr',85000,1,'fir')]:
+            sound,amp=pcm(iq,cut,lag,filter_kind)
             result[str(fc)][name]=stats(sound,amp)
             print('MEASURE',fc,name, json.dumps(result[str(fc)][name]),flush=True)
     print('FINAL_JSON',json.dumps(result),flush=True)
