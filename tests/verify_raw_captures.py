@@ -28,7 +28,7 @@ def main() -> None:
         assert metadata["sample_count"] == fields[8]
         assert metadata["sha256"] == digest
         checked += 1
-    assert checked == 4, checked
+    assert checked == 1, checked
     print(f"RAW_CAPTURE_SET_PASS files={checked}")
 
 

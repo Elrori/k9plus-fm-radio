@@ -146,7 +146,7 @@ python host\tune_radio.py --mode audio
 
 ```powershell
 python host\capture_raw.py 95.0 --seconds 0.25 `
-  --output captures\raw_2026-10-18\fm_95p0.k9raw
+  --output captures\raw_2026-10-18\fm_band_snapshot.k9raw
 ```
 
 bypass取样点位于`IBUFDS + IDDR`之后、NCO之前。240 MS/s bitstream按LSB

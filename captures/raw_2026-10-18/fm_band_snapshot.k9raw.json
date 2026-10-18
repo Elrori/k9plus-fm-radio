@@ -2,6 +2,7 @@
   "format": "K9RAW1",
   "captured_utc": "2026-10-18T01:05:07.731634+00:00",
   "frequency_hz": 95000000,
+  "frequency_note": "Control-register value only; raw bypass is before the NCO and contains the full 0-120 MHz first Nyquist zone.",
   "sample_rate_hz": 240000000,
   "bit_order": "LSB-first; chronological; IDDR Q1 then Q2",
   "first_packet_sequence": 0,
