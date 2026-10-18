@@ -40,6 +40,7 @@ def main():
     cases=[
       (1000,0,75000),(1000,6,75000),
       (5000,6,75000),(10000,6,75000),
+      (15000,6,75000),
       (10000,12,75000),(15000,12,75000)]
     for mod,cnr,dev in cases:
         bits=synth(95e6,.08,cnr,mod,dev)
@@ -48,7 +49,9 @@ def main():
         for name,cut,lag,kind in [
             ('rtl_ref',85000,1,'cic'),('lag2',85000,2,'cic'),
             ('lag4',85000,4,'cic'),('narrow70',70000,1,'cic'),
-            ('fir_corr',85000,1,'fir')]:
+            ('fir_corr',85000,1,'fir'),
+            ('fir_corr18',85000,1,'fir18'),
+            ('lag2_fir18',85000,2,'fir18')]:
             audio,_=pcm(iq,cut,lag,kind)
             results[name]=sinad(audio,mod)
         row=dict(mod_hz=mod,cnr_db=cnr,freq_dev_hz=dev,**results)
