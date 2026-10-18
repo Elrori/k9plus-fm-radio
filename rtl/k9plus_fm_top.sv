@@ -46,12 +46,14 @@ module k9plus_fm_top (
     assign eth_mdio = 1'bz;
     wire [31:0] net_tune_hz_eth, net_phase_eth;
     wire net_tune_toggle_eth;
+    wire net_bypass_request_eth;
     wire [31:0] net_rx_debug;
     rgmii_tune_rx tune_receiver (
         .phy_clk(eth_rx_clk), .idelay_refclk(clk_idelay_ref),
         .idelay_rst(!idelay_ref_locked), .clk(clk_eth), .rst(eth_rst), .rgmii_rxd(eth_rx_data),
         .rgmii_rx_ctl(eth_rx_ctl), .tune_hz(net_tune_hz_eth),
         .phase_increment(net_phase_eth), .tune_toggle(net_tune_toggle_eth),
+        .bypass_mode(net_bypass_request_eth),
         .debug_status(net_rx_debug)
     );
 
@@ -62,6 +64,39 @@ module k9plus_fm_top (
     IDDR #(.DDR_CLK_EDGE("SAME_EDGE_PIPELINED"), .SRTYPE("SYNC")) rf_iddr (
         .C(clk_rf), .CE(1'b1), .D(rf_bit), .R(rf_rst), .S(1'b0),
         .Q1(rf_sample_0), .Q2(rf_sample_1)
+    );
+
+    // A mode request is applied only between Ethernet frames.  This prevents
+    // a host command from truncating an audio or raw frame already in flight.
+    logic tx_bypass_mode;
+    wire audio_tx_active, raw_tx_active;
+    always_ff @(posedge clk_eth) begin
+        if (eth_rst)
+            tx_bypass_mode <= 0;
+        else if (!tx_bypass_mode && net_bypass_request_eth && !audio_tx_active)
+            tx_bypass_mode <= 1;
+        else if (tx_bypass_mode && !net_bypass_request_eth && !raw_tx_active)
+            tx_bypass_mode <= 0;
+    end
+
+    (* ASYNC_REG = "TRUE" *) logic bypass_meta_rf, bypass_sync_rf;
+    always_ff @(posedge clk_rf) begin
+        bypass_meta_rf <= tx_bypass_mode;
+        bypass_sync_rf <= bypass_meta_rf;
+    end
+
+    wire [7:0] raw_fifo_data;
+    wire raw_fifo_empty;
+    wire [12:0] raw_fifo_count;
+    wire raw_fifo_rd_en;
+    wire [31:0] raw_overflow_rf;
+    raw_sample_cdc raw_cdc (
+        .wr_clk(clk_rf), .wr_rst(rf_rst), .raw_enable_wr(bypass_sync_rf),
+        .sample_0(rf_sample_0), .sample_1(rf_sample_1),
+        .rd_clk(clk_eth), .fifo_rst(eth_rst || !tx_bypass_mode),
+        .rd_data(raw_fifo_data), .rd_en(raw_fifo_rd_en),
+        .rd_empty(raw_fifo_empty), .rd_count(raw_fifo_count),
+        .overflow_bytes(raw_overflow_rf)
     );
 
     // Measure the raw 1-bit stream over 65536 RF clock cycles (131072 samples).
@@ -242,6 +277,7 @@ module k9plus_fm_top (
     (* ASYNC_REG = "TRUE" *) logic [31:0] tune_meta, tune_sync;
     (* ASYNC_REG = "TRUE" *) logic [31:0] stats_meta, stats_sync;
     (* ASYNC_REG = "TRUE" *) logic [31:0] channel_stats_meta, channel_stats_sync;
+    (* ASYNC_REG = "TRUE" *) logic [31:0] raw_overflow_meta, raw_overflow_sync;
     logic pcm_valid_eth;
     always_ff @(posedge clk_eth) begin
         pcm_toggle_meta <= pcm_toggle_rf; pcm_toggle_sync <= pcm_toggle_meta;
@@ -250,6 +286,7 @@ module k9plus_fm_top (
         tune_meta <= tuned_hz; tune_sync <= tune_meta;
         stats_meta <= rf_stats_hold; stats_sync <= stats_meta;
         channel_stats_meta <= channel_stats_hold; channel_stats_sync <= channel_stats_meta;
+        raw_overflow_meta <= raw_overflow_rf; raw_overflow_sync <= raw_overflow_meta;
         if (eth_rst) begin pcm_toggle_seen <= pcm_toggle_sync; pcm_valid_eth <= 0; end
         else begin
             pcm_valid_eth <= (pcm_toggle_sync != pcm_toggle_seen);
@@ -258,18 +295,37 @@ module k9plus_fm_top (
         end
     end
 
-    wire [7:0] eth_frame_byte;
-    wire eth_frame_valid, eth_frame_ready, eth_frame_last, tx_active;
+    wire [7:0] audio_frame_byte, raw_frame_byte, eth_frame_byte;
+    wire audio_frame_valid, audio_frame_ready, audio_frame_last;
+    wire raw_frame_valid, raw_frame_ready, raw_frame_last;
+    wire eth_frame_valid, eth_frame_ready, eth_frame_last;
     wire [31:0] packet_count, dropped_samples;
     udp_audio_axis_tx packetizer (
-        .clk(clk_eth), .rst(eth_rst),
+        .clk(clk_eth), .rst(eth_rst || tx_bypass_mode),
         .sample_valid(pcm_valid_eth), .sample(pcm_sync), .sample_clipped(clip_sync),
         .tuned_hz(tune_sync), .rf_stats(stats_sync), .rx_debug(net_rx_debug),
-        .channel_stats(channel_stats_sync), .axis_data(eth_frame_byte),
-        .axis_valid(eth_frame_valid), .axis_ready(eth_frame_ready),
-        .axis_last(eth_frame_last),
-        .active(tx_active), .packet_count, .dropped_samples
+        .channel_stats(channel_stats_sync), .axis_data(audio_frame_byte),
+        .axis_valid(audio_frame_valid), .axis_ready(audio_frame_ready),
+        .axis_last(audio_frame_last),
+        .active(audio_tx_active), .packet_count, .dropped_samples
     );
+
+    wire [31:0] raw_packet_count;
+    udp_raw_axis_tx raw_packetizer (
+        .clk(clk_eth), .rst(eth_rst || !tx_bypass_mode), .enable(tx_bypass_mode),
+        .tuned_hz(tune_sync), .overflow_bytes(raw_overflow_sync),
+        .fifo_data(raw_fifo_data), .fifo_empty(raw_fifo_empty),
+        .fifo_count(raw_fifo_count), .fifo_rd_en(raw_fifo_rd_en),
+        .axis_data(raw_frame_byte), .axis_valid(raw_frame_valid),
+        .axis_ready(raw_frame_ready), .axis_last(raw_frame_last),
+        .active(raw_tx_active), .packet_count(raw_packet_count)
+    );
+
+    assign eth_frame_byte = tx_bypass_mode ? raw_frame_byte : audio_frame_byte;
+    assign eth_frame_valid = tx_bypass_mode ? raw_frame_valid : audio_frame_valid;
+    assign eth_frame_last = tx_bypass_mode ? raw_frame_last : audio_frame_last;
+    assign raw_frame_ready = tx_bypass_mode && eth_frame_ready;
+    assign audio_frame_ready = !tx_bypass_mode && eth_frame_ready;
 
     wire [7:0] gmii_txd;
     wire gmii_tx_en, gmii_tx_er;
@@ -289,5 +345,5 @@ module k9plus_fm_top (
         .rgmii_tx_clk(eth_tx_clk), .rgmii_txd(eth_tx_data), .rgmii_tx_ctl(eth_tx_ctl)
     );
 
-    assign led = {tx_active, audio_activity, !eth_rst, rf_locked};
+    assign led = {audio_tx_active || raw_tx_active, tx_bypass_mode, !eth_rst, rf_locked};
 endmodule

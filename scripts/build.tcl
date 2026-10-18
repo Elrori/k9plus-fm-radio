@@ -4,6 +4,13 @@ set ref [file normalize [file join $root .. .. verilog-ethernet-anlogic rtl]]
 file mkdir $out
 cd $root
 
+# Non-project synthesis does not automatically load parameterized macros.
+set xpm_root [file join $::env(K9_VIVADO_ROOT) data ip xpm]
+read_verilog -sv [list \
+    [file join $xpm_root xpm_cdc hdl xpm_cdc.sv] \
+    [file join $xpm_root xpm_memory hdl xpm_memory.sv] \
+    [file join $xpm_root xpm_fifo hdl xpm_fifo.sv]]
+
 read_verilog [list [file join $ref lfsr.v] [file join $ref axis_gmii_tx.v]]
 read_verilog -sv [list \
     rtl/clock_gen.sv \
@@ -14,6 +21,8 @@ read_verilog -sv [list \
     rtl/cic3_decimator.sv \
     rtl/audio_post.sv \
     rtl/udp_audio_axis_tx.sv \
+    rtl/udp_raw_axis_tx.sv \
+    rtl/raw_sample_cdc.sv \
     rtl/rgmii_tune_rx.sv \
     rtl/rgmii_tx.sv \
     rtl/k9plus_fm_top.sv]

@@ -9,6 +9,7 @@ module rgmii_tune_rx (
     output logic [31:0] tune_hz,
     output logic [31:0] phase_increment,
     output logic        tune_toggle,
+    output logic        bypass_mode,
     output logic [31:0] debug_status
 );
     wire [4:0] ddr_q1, ddr_q2;
@@ -51,7 +52,7 @@ module rgmii_tune_rx (
     logic gmii_rx_dv_previous;
     logic [31:0] magic_window;
     logic [3:0] command_index;
-    logic command_active;
+    logic command_active, command_is_mode;
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -67,11 +68,13 @@ module rgmii_tune_rx (
             tune_hz <= 0;
             phase_increment <= 0;
             tune_toggle <= 0;
+            bypass_mode <= 0;
             debug_status <= 0;
             gmii_rx_dv_previous <= 0;
             magic_window <= 0;
             command_index <= 0;
             command_active <= 0;
+            command_is_mode <= 0;
         end else if (!gmii_rx_dv) begin
             gmii_rx_dv_previous <= 0;
             preamble_seen <= 0;
@@ -109,10 +112,20 @@ module rgmii_tune_rx (
             // frames and lets repeated commands recover from a bad frame.
             if ({magic_window[23:0], gmii_rxd} == 32'h4b395455) begin
                 command_active <= 1;
+                command_is_mode <= 0;
                 command_index <= 0;
                 debug_status[14] <= 1'b1;
+            end else if ({magic_window[23:0], gmii_rxd} == 32'h4b394d44) begin
+                command_active <= 1;
+                command_is_mode <= 1;
+                command_index <= 0;
+                debug_status[16] <= 1'b1;
             end else if (command_active) begin
-                case (command_index)
+                if (command_is_mode) begin
+                    bypass_mode <= gmii_rxd[0];
+                    command_active <= 0;
+                    debug_status[17] <= 1'b1;
+                end else case (command_index)
                     0: pending_hz[7:0] <= gmii_rxd;
                     1: pending_hz[15:8] <= gmii_rxd;
                     2: pending_hz[23:16] <= gmii_rxd;

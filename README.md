@@ -106,6 +106,7 @@ cd E:\doc\WORK_SPACE\mix\fpga-radio\k9plus-fm-radio
 python scripts\gen_coeffs.py
 .\sim_fm.ps1
 .\sim_udp.ps1
+.\sim_raw.ps1
 .\build.ps1
 .\program.ps1
 python -m pip install -r host\requirements.txt
@@ -129,6 +130,34 @@ python host\k9fm_receiver.py --list-devices
 python host\tune_radio.py 95.0 --bind 169.254.172.8
 python host\tune_radio.py 96.8 --bind 169.254.172.8
 ```
+
+### 原始1-bit bypass采集
+
+上位机可通过UDP/50001发送`K9MD`命令，在正常48 kS/s音频模式和原始RF
+bypass模式之间切换，无需重新编译。手动切换命令为：
+
+```powershell
+python host\tune_radio.py --mode bypass
+python host\tune_radio.py --mode audio
+```
+
+通常直接使用自动采集脚本；它会先调谐、进入bypass、校验连续性、保存文件，
+并在成功或失败后都恢复音频模式：
+
+```powershell
+python host\capture_raw.py 95.0 --seconds 0.25 `
+  --output captures\raw_2026-10-18\fm_95p0.k9raw
+```
+
+bypass取样点位于`IBUFDS + IDDR`之后、NCO之前。240 MS/s bitstream按LSB
+优先打包，原始数据率30 MB/s；FPGA通过4 KB异步FIFO跨到125 MHz以太网域，
+在UDP/50002发送。每个标准MTU数据报包含32字节`K9RF`头和1440字节原始
+数据，即11520个样本。头中包含包序号、调谐标签、采样率、首样本索引和FIFO
+溢出计数。`capture_raw.py`发现任何包缺失、样本索引跳变或FIFO溢出都会失败，
+不会把有缺口的数据伪装成仿真基准。
+
+`K9RAW1`文件的64字节自描述头、读取方法和首批实板数据见
+[`captures/raw_2026-10-18/README.md`](captures/raw_2026-10-18/README.md)。
 
 快速查看链路、占空比和信道幅度：
 
@@ -160,8 +189,7 @@ python host\probe_packets.py --count 40
 所以会出现明显的阈值噪声。96 MHz 强载波能够安静解调，说明 NCO、FIR、
 鉴频、音频和以太网链路工作正常。
 
-当前位流已通过 FM 仿真、布线、DRC 和时序检查；最终 WNS 为 +0.148 ns，
-WHS 为 +0.019 ns，时序失败端点为 0。
+当前bypass位流已通过FM/UDP仿真、布线、DRC和时序检查。
 
 ## 下一阶段
 

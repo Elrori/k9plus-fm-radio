@@ -18,9 +18,9 @@ import struct
 import sys
 import time
 
+from radio_control import SAMPLE_RATE, open_control_socket, send_mode, send_tune
 
-SAMPLE_RATE = 240_000_000
-PORT = 50_001
+
 FM_MIN_MHZ = 88.0
 FM_MAX_MHZ = 108.0
 STEP_SMALL = 0.1
@@ -28,11 +28,8 @@ STEP_LARGE = 0.5
 
 
 def _send(sock: socket.socket, bind_addr: str, frequency_hz: int) -> None:
-    phase_increment = round(frequency_hz / SAMPLE_RATE * 2**32)
-    payload = struct.pack("<4sII", b"K9TU", frequency_hz, phase_increment)
-    for _ in range(8):
-        sock.sendto(payload, ("255.255.255.255", PORT))
-        time.sleep(0.02)
+    del bind_addr
+    send_tune(sock, frequency_hz)
 
 
 def _clamp(mhz: float) -> float:
@@ -45,9 +42,7 @@ def _interactive(start_mhz: float, bind_addr: str) -> None:
     except ImportError:
         sys.exit("Interactive mode requires Windows (msvcrt).")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.bind((bind_addr, 0))
+    sock = open_control_socket(bind_addr)
 
     freq = _clamp(start_mhz)
     _send(sock, bind_addr, round(freq * 1_000_000))
@@ -96,6 +91,8 @@ def main() -> None:
                         help="starting frequency for --interactive (default 96.8 MHz)")
     parser.add_argument("--bind", default="169.254.172.8",
                         help="source IPv4 on the wired adapter")
+    parser.add_argument("--mode", choices=("audio", "bypass"),
+                        help="also switch the Ethernet output mode")
     args = parser.parse_args()
 
     if args.interactive:
@@ -103,20 +100,24 @@ def main() -> None:
         _interactive(start, args.bind)
         return
 
-    if args.frequency is None:
+    if args.frequency is None and args.mode is None:
         parser.error("frequency argument required in one-shot mode")
 
-    frequency_hz = round(args.frequency * 1_000_000)
-    if not (FM_MIN_MHZ * 1_000_000 <= frequency_hz <= FM_MAX_MHZ * 1_000_000):
-        raise SystemExit(f"frequency must be in {FM_MIN_MHZ}..{FM_MAX_MHZ} MHz")
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.bind((args.bind, 0))
-    _send(sock, args.bind, frequency_hz)
+    sock = open_control_socket(args.bind)
+    frequency_hz = None
+    phase_increment = None
+    if args.frequency is not None:
+        frequency_hz = round(args.frequency * 1_000_000)
+        if not (FM_MIN_MHZ * 1_000_000 <= frequency_hz <= FM_MAX_MHZ * 1_000_000):
+            raise SystemExit(f"frequency must be in {FM_MIN_MHZ}..{FM_MAX_MHZ} MHz")
+        phase_increment = send_tune(sock, frequency_hz)
+    if args.mode is not None:
+        send_mode(sock, args.mode == "bypass")
     sock.close()
-    phase_increment = round(frequency_hz / SAMPLE_RATE * 2**32)
-    print(f"TUNE_SENT frequency={frequency_hz}Hz phase_increment={phase_increment}")
+    if frequency_hz is not None:
+        print(f"TUNE_SENT frequency={frequency_hz}Hz phase_increment={phase_increment}")
+    if args.mode is not None:
+        print(f"MODE_SENT mode={args.mode}")
 
 
 if __name__ == "__main__":
