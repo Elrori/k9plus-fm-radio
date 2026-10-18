@@ -1,0 +1,19 @@
+name: K9 1-bit RF offline DSP benchmark
+on:
+  push:
+    branches:
+      - analysis/onebit-fm-benchmark-20261018
+  workflow_dispatch:
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install numerical dependencies
+        run: python -m pip install numpy scipy
+      - name: Benchmark committed raw capture
+        run: python -u tests/bench_1bit_real.py
