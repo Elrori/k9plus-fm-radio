@@ -81,3 +81,65 @@ python tests/bench_1bit_synthetic.py
 ```
 
 CI (real + synthetic): GitHub Actions run `39087362584`.
+
+## Follow-up: configurable lag2 RTL and controlled correlation-filter A/B
+
+Branch includes a **synthesizable** but deliberately **opt-in** change to
+`rtl/fm_discriminator.sv`: `CORR_LAG=1` (default, exactly as before)
+or `CORR_LAG=2`. The 2-sample phase-angle output is arithmetic-shifted
+right by 1 to restore the original one-IF-sample Q28 frequency scale.
+Existing top-level instantiation uses the unchanged default. No flash/FPGA
+programming or top-level connection was changed.
+
+A frozen copy of the pre-change master discriminator resides in
+`tests/ref_fm_discriminator_20261018.sv`. In
+`tests/tb_fm_discriminator_lag.sv`, the lag=1 modified RTL matches this
+frozen source **cycle by cycle and bit by bit**, including valid and Q28.
+Constant IF phase slopes of +10 kHz and -15 kHz independently checked
+lag=1/2 normalization and polarity. GitHub Actions (Icarus Verilog) passed.
+These checks are **unit-level**, not a routed Vivado timing sign-off or
+end-to-end fixed-point reception test.
+
+### Independent follow-up floating-point DSP cases
+
+| RF FM stimulus | lag2 vs baseline | FIR16 vs baseline | FIR18 vs baseline | lag2+FIR18 vs baseline |
+|---|---:|---:|---:|---:|
+| 1 kHz audio, 0 dB CNR, ±75k | +1.85 dB | -0.24 dB | -0.39 dB | +1.43 dB |
+| 5 kHz audio, 6 dB CNR, ±75k | +0.04 dB | +1.03 dB | **-4.36 dB** | -1.92 dB |
+| 10 kHz audio, 6 dB CNR, ±75k | +0.33 dB | +2.39 dB | +1.36 dB | +2.68 dB |
+| 15 kHz audio, 6 dB CNR, ±75k | +1.14 dB | +0.20 dB | +2.91 dB | -4.23 dB |
+| 10 kHz audio, 12 dB CNR, ±75k | +1.87 dB | +5.08 dB | -2.35 dB | +3.19 dB |
+| 15 kHz audio, 12 dB CNR, ±75k | +5.07 dB | +2.97 dB | +2.26 dB | **-8.67 dB** |
+
+Here FIR16/18 are **241-tap** low-pass filters on the complex correlation
+at 960 kS/s, **before** decimation by 20 and atan2. They are expensive
+to implement in FPGA compared to CIC, and improvements are not uniformly
+positive. Combining lag2 with FIR18 can make distortion much worse.
+
+### Low-cost 3-tap CIC equalizer experiment
+
+A shift/add-friendly real FIR on 48-kS/s complex correlation samples:
+`[-a, 1+2a, -a]`, `a=1/8` or `1/4`, compensates the CIC3 droop.
+In controlled 15-kHz / 6-dB CNR / ±75-kHz FM, relative SINAD:
+`a=1/8` +2.03 dB; `a=1/4` +2.71 dB. At 5 kHz / 6 dB:
+`a=1/8` -0.65 dB; `a=1/4` -1.38 dB.
+Real 96.0-MHz quiet carrier RMS with a=1/4 **increases** from
+0.002605 to 0.002931, and its >8-kHz band RMS rises from
+0.000912 to 0.001653. This emphasizes high-frequency noise and should
+not be the weak-signal default.
+
+### Next gate / recommendation
+
+**Keep default lag1 + CIC3 in the deployment.** Only the lag2 compile-time
+candidate is implemented in the RTL branch, with baseline equivalence
+checked. FIR16/18 and CIC equalizers remain offline experiments because
+none exhibits reliable improvement across all modulations/conditions.
+
+Meaningful whole-radio improvements require a longer matched real-data
+capture with known program or reference modulation; the current 0.25-s
+broadband unknown-audio snapshot cannot yield real weak-station audio SINAD.
+Test lag2 with a controlled sweep and Vivado place/route before using it
+on physical K9+ hardware.
+
+CI includes real RF, known-tone synthetic, and RTL regression tests.
+Successful run: `39088246070`.
