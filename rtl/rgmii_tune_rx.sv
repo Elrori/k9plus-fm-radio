@@ -136,12 +136,10 @@ module rgmii_tune_rx (
                     7: begin
                         pending_phase[31:24] <= gmii_rxd;
                         command_active <= 0;
-                        if (pending_hz >= 32'd88_000_000 && pending_hz <= 32'd108_000_000) begin
-                            tune_hz <= pending_hz;
-                            phase_increment <= {gmii_rxd, pending_phase[23:0]};
-                            tune_toggle <= ~tune_toggle;
-                            debug_status[15] <= 1'b1;
-                        end
+                        tune_hz <= pending_hz;
+                        phase_increment <= {gmii_rxd, pending_phase[23:0]};
+                        tune_toggle <= ~tune_toggle;
+                        debug_status[15] <= 1'b1;
                     end
                     default: command_active <= 0;
                 endcase
@@ -166,8 +164,7 @@ module rgmii_tune_rx (
                 8'd52: pending_phase[23:16] <= gmii_rxd;
                 8'd53: begin
                     pending_phase[31:24] <= gmii_rxd;
-                    if (valid_ethertype && valid_protocol && valid_port && valid_magic &&
-                        pending_hz >= 32'd88_000_000 && pending_hz <= 32'd108_000_000) begin
+                    if (valid_ethertype && valid_protocol && valid_port && valid_magic) begin
                         tune_hz <= pending_hz;
                         phase_increment <= {gmii_rxd, pending_phase[23:0]};
                         tune_toggle <= ~tune_toggle;

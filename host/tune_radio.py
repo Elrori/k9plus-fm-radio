@@ -18,11 +18,9 @@ import struct
 import sys
 import time
 
-from radio_control import SAMPLE_RATE, open_control_socket, send_mode, send_tune
+from radio_control import MAX_TUNE_HZ, open_control_socket, send_mode, send_tune, validate_frequency_hz
 
 
-FM_MIN_MHZ = 88.0
-FM_MAX_MHZ = 108.0
 STEP_SMALL = 0.1
 STEP_LARGE = 0.5
 
@@ -32,8 +30,8 @@ def _send(sock: socket.socket, bind_addr: str, frequency_hz: int) -> None:
     send_tune(sock, frequency_hz)
 
 
-def _clamp(mhz: float) -> float:
-    return max(FM_MIN_MHZ, min(FM_MAX_MHZ, round(mhz * 10) / 10))
+def _clamp_to_protocol(mhz: float) -> float:
+    return max(0.0, min(MAX_TUNE_HZ / 1_000_000, round(mhz * 10) / 10))
 
 
 def _interactive(start_mhz: float, bind_addr: str) -> None:
@@ -44,7 +42,7 @@ def _interactive(start_mhz: float, bind_addr: str) -> None:
 
     sock = open_control_socket(bind_addr)
 
-    freq = _clamp(start_mhz)
+    freq = _clamp_to_protocol(start_mhz)
     _send(sock, bind_addr, round(freq * 1_000_000))
 
     print(f"Interactive tuner  (Up/Down=0.1 MHz  PgUp/PgDn=0.5 MHz  q=quit)")
@@ -70,7 +68,7 @@ def _interactive(start_mhz: float, bind_addr: str) -> None:
                 break
 
             if step != 0.0:
-                freq = _clamp(freq + step)
+                freq = _clamp_to_protocol(freq + step)
                 _send(sock, bind_addr, round(freq * 1_000_000))
                 print(f"Current: {freq:.1f} MHz   ", end="\r", flush=True)
     except KeyboardInterrupt:
@@ -108,8 +106,10 @@ def main() -> None:
     phase_increment = None
     if args.frequency is not None:
         frequency_hz = round(args.frequency * 1_000_000)
-        if not (FM_MIN_MHZ * 1_000_000 <= frequency_hz <= FM_MAX_MHZ * 1_000_000):
-            raise SystemExit(f"frequency must be in {FM_MIN_MHZ}..{FM_MAX_MHZ} MHz")
+        try:
+            validate_frequency_hz(frequency_hz)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
         phase_increment = send_tune(sock, frequency_hz)
     if args.mode is not None:
         send_mode(sock, args.mode == "bypass")

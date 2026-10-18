@@ -17,8 +17,6 @@ module k9plus_fm_top (
     // 96.8 MHz / 240 MHz * 2^32, rounded to the nearest integer.
     localparam [31:0] INITIAL_PHASE_INC = 32'd1732303476;
     localparam [31:0] TUNE_STEP_INC = 32'd1789570;
-    localparam [31:0] MIN_PHASE_INC = 32'd1574821342;
-    localparam [31:0] MAX_PHASE_INC = 32'd1932735283;
 
     wire clk_rf, rf_locked;
     wire clk_idelay_ref, idelay_ref_locked;
@@ -178,23 +176,21 @@ module k9plus_fm_top (
                 key1_hold <= key_sync_1[1] ? 0 : key1_hold + (key1_hold != 8'hff);
                 if (!key_sync_1[0] &&
                     (key_previous[0] || (key0_hold >= 8'd60 && key0_hold[3:0] == 0)) &&
-                    phase_increment > MIN_PHASE_INC) begin
+                    tuned_hz >= 32'd100_000) begin
                     phase_increment <= phase_increment - TUNE_STEP_INC;
                     tuned_hz <= tuned_hz - 100_000;
                 end
                 if (!key_sync_1[1] &&
                     (key_previous[1] || (key1_hold >= 8'd60 && key1_hold[3:0] == 0)) &&
-                    phase_increment < MAX_PHASE_INC) begin
+                    tuned_hz <= 32'hffff_ffff - 32'd100_000) begin
                     phase_increment <= phase_increment + TUNE_STEP_INC;
                     tuned_hz <= tuned_hz + 100_000;
                 end
             end
             if (net_toggle_sync != net_toggle_seen) begin
                 net_toggle_seen <= net_toggle_sync;
-                if (net_hz_sync >= 32'd88_000_000 && net_hz_sync <= 32'd108_000_000) begin
-                    phase_increment <= net_phase_sync;
-                    tuned_hz <= net_hz_sync;
-                end
+                phase_increment <= net_phase_sync;
+                tuned_hz <= net_hz_sync;
             end
         end
     end

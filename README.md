@@ -149,6 +149,10 @@ python host\tune_radio.py 95.0 --bind 169.254.172.8
 python host\tune_radio.py 96.8 --bind 169.254.172.8
 ```
 
+调谐控制不再限制为88～108 MHz，FPGA和全部上位机工具接受控制协议可表示的
+0～4294.967295 MHz。实际RF采样率为240 MS/s，因此0～120 MHz是唯一的第一
+Nyquist区；更高频率仍可下发，但会按240 MHz周期折叠到相应混叠频率。
+
 ### 原始1-bit bypass采集
 
 上位机可通过UDP/50001发送`K9MD`命令，在正常48 kS/s音频模式和原始RF

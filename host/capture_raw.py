@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from radio_control import SAMPLE_RATE, open_control_socket, send_mode, send_tune
+from radio_control import SAMPLE_RATE, open_control_socket, send_mode, send_tune, validate_frequency_hz
 
 
 RAW_PORT = 50_002
@@ -40,8 +40,10 @@ def main() -> None:
     args = parser.parse_args()
 
     frequency_hz = round(args.frequency * 1_000_000)
-    if not 88_000_000 <= frequency_hz <= 108_000_000:
-        raise SystemExit("frequency must be in 88..108 MHz")
+    try:
+        validate_frequency_hz(frequency_hz)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     if args.seconds <= 0:
         raise SystemExit("--seconds must be positive")
 

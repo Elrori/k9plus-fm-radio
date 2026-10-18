@@ -9,14 +9,16 @@ import time
 
 import numpy as np
 
+from radio_control import phase_increment_for_frequency, validate_frequency_hz
+
 
 HEADER = struct.Struct("<4sBBHIIII")
 RATE = 48_000
 
 
 def send_tune(sock: socket.socket, mhz: float) -> int:
-    hz = round(mhz * 1_000_000)
-    phase = round(hz / 240_000_000 * 2**32)
+    hz = validate_frequency_hz(round(mhz * 1_000_000))
+    phase = phase_increment_for_frequency(hz)
     packet = struct.pack("<4sII", b"K9TU", hz, phase)
     for _ in range(4):
         sock.sendto(packet, ("255.255.255.255", 50_001))

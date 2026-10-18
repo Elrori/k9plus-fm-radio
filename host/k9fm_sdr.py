@@ -16,7 +16,7 @@ from matplotlib.widgets import Button, RadioButtons, Slider, TextBox
 import numpy as np
 
 from k9fm_receiver import BiquadHighpass, BiquadLowpass
-from radio_control import open_control_socket, send_tune
+from radio_control import MAX_TUNE_HZ, open_control_socket, send_tune, validate_frequency_hz
 
 
 AUDIO_PORT = 50_000
@@ -216,9 +216,15 @@ def main() -> None:
     control = open_control_socket(args.control_bind)
     control_lock = threading.Lock()
     requested_hz = round(args.frequency * 1e6)
+    try:
+        validate_frequency_hz(requested_hz)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
     def tune_async(frequency_hz: int) -> None:
-        if not 88_000_000 <= frequency_hz <= 108_000_000:
+        try:
+            validate_frequency_hz(frequency_hz)
+        except ValueError:
             return
         def worker() -> None:
             with control_lock:
@@ -319,7 +325,7 @@ def main() -> None:
             value = round(float(tune_box.text) * 1e6)
         except ValueError:
             return None
-        return value if 88_000_000 <= value <= 108_000_000 else None
+        return value if 0 <= value <= MAX_TUNE_HZ else None
 
     def submit_tune(_event=None) -> None:
         value = requested_frequency()
@@ -330,7 +336,7 @@ def main() -> None:
         value = requested_frequency()
         if value is None:
             value = state.station_hz or requested_hz
-        value = min(108_000_000, max(88_000_000, value + delta_hz))
+        value = min(MAX_TUNE_HZ, max(0, value + delta_hz))
         tune_box.set_val(f"{value/1e6:.3f}")
 
     tune_box.on_submit(submit_tune)
@@ -358,8 +364,7 @@ def main() -> None:
 
     def click_tune(event) -> None:
         if event.dblclick and event.inaxes in (spectrum_axis, waterfall_axis) and event.xdata:
-            value = min(108.0, max(88.0, event.xdata))
-            tune_box.set_val(f"{value:.3f}")
+            tune_box.set_val(f"{event.xdata:.3f}")
 
     figure.canvas.mpl_connect("button_press_event", click_tune)
 
