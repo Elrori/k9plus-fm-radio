@@ -24,5 +24,6 @@ jobs:
       - name: Exercise lag1 / lag2 synthesizable discriminator RTL
         run: |
           iverilog -g2012 -s tb_fm_discriminator_lag -o /tmp/k9_lag.vvp \
-            rtl/fm_discriminator.sv rtl/cic3_decimator.sv tests/tb_fm_discriminator_lag.sv
+            rtl/fm_discriminator.sv rtl/cic3_decimator.sv \
+            tests/ref_fm_discriminator_20261018.sv tests/tb_fm_discriminator_lag.sv
           vvp /tmp/k9_lag.vvp
