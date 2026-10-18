@@ -17,3 +17,5 @@ jobs:
         run: python -m pip install numpy scipy
       - name: Benchmark committed raw capture
         run: python -u tests/bench_1bit_real.py
+      - name: Known-tone synthetic FM sweep
+        run: python -u tests/bench_1bit_synthetic.py
