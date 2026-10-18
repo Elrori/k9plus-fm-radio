@@ -51,7 +51,9 @@ def main():
             ('lag4',85000,4,'cic'),('narrow70',70000,1,'cic'),
             ('fir_corr',85000,1,'fir'),
             ('fir_corr18',85000,1,'fir18'),
-            ('lag2_fir18',85000,2,'fir18')]:
+            ('lag2_fir18',85000,2,'fir18'),
+            ('cic_eq8',85000,1,'cic_eq8'),
+            ('cic_eq4',85000,1,'cic_eq4')]:
             audio,_=pcm(iq,cut,lag,kind)
             results[name]=sinad(audio,mod)
         row=dict(mod_hz=mod,cnr_db=cnr,freq_dev_hz=dev,**results)
