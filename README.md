@@ -107,16 +107,34 @@ python scripts\gen_coeffs.py
 .\sim_fm.ps1
 .\sim_udp.ps1
 .\sim_raw.ps1
+.\sim_iq.ps1
 .\build.ps1
 .\program.ps1
 python -m pip install -r host\requirements.txt
 ```
 
-实时播放和频谱：
+`program.ps1`只写入FPGA易失配置；确认功能正常后，用下面的命令写入板载
+MX25L12845G 128 Mbit SPI Flash、回读校验，并触发一次从Flash重新配置：
 
 ```powershell
-python host\k9fm_receiver.py --device 3
+.\program_flash.ps1
 ```
+
+脚本使用XI050CD厂商提供的`Flash_Write_Protect_Cancel.bit`解除写保护，随后由
+Vivado完成擦除、写入和VERIFY。只有日志出现
+`K9PLUS_FM_FLASH_PROGRAM_VERIFY_PASS`才表示固化校验成功。
+
+统一上位机（音频、调谐、6 MHz频谱和瀑布）：
+
+```powershell
+python host\k9fm_sdr.py --device 3 --control-bind 169.254.172.8
+```
+
+宽带显示数据来自独立的6 MS/s复数IQ流，覆盖中心频率两侧各约3 MHz；双击
+频谱或瀑布中的频率即可调谐。左右方向键每次移动100 kHz，`M`切换静音。
+界面还集成音量和原始/6 kHz/4.5 kHz/3.5 kHz四档音频选择。旧的轻量音频
+程序仍保留为`host/k9fm_receiver.py`。统一上位机默认使用与Initial commit一致的
+仅6 kHz低通（无额外高通）和1.0音量；4.5/3.5 kHz作为弱信号可选档。
 
 如果声卡编号变化：
 
@@ -156,6 +174,12 @@ bypass取样点位于`IBUFDS + IDDR`之后、NCO之前。240 MS/s bitstream按LS
 溢出计数。`capture_raw.py`发现任何包缺失、样本索引跳变或FIFO溢出都会失败，
 不会把有缺口的数据伪装成仿真基准。
 
+正常音频模式还会在UDP/50003发送`K9IQ`宽带显示包：每包32字节头和1440字节
+有符号I8/Q8交错数据，共720个6 MS/s复数样本。显示负载为96 Mbit/s，且
+上位机每32包批量转换并写入环形缓冲，避免逐包加锁。该流只用于频谱/瀑布显示，
+不会进入或改变原有960 kS/s信道滤波、FM鉴频和48 kS/s音频链。进入raw bypass
+时暂停`K9IQ`，避免与240 MS/s原始抓取争用带宽。
+
 `K9RAW1`文件的64字节自描述头、读取方法和首批实板数据见
 [`captures/raw_2026-10-18/README.md`](captures/raw_2026-10-18/README.md)。
 
@@ -171,7 +195,7 @@ python host\probe_packets.py --count 40
 |---:|---|
 | 0 | 原始音频 |
 | 1 | 75～6000 Hz 宽带 |
-| 2 | 90～4500 Hz 清晰模式（默认） |
+| 2 | 90～4500 Hz 清晰模式 |
 | 3 | 100～3500 Hz 弱信号窄带 |
 
 ## 里程碑实测
@@ -191,14 +215,40 @@ python host\probe_packets.py --count 40
 
 当前bypass位流已通过FM/UDP仿真、布线、DRC和时序检查。
 
+### 6 MHz频谱/瀑布里程碑（2026-10-18）
+
+- FPGA新增与原接收链并行的240 MS/s→6 MS/s复数CIC监视通道，中心两侧各显示
+  约3 MHz；原960 kS/s信道滤波与48 kS/s音频路径保持不变；
+- 显示支路改用I8/Q8，6 MS/s负载由192降到96 Mbit/s；每包由360增至720点，
+  包率由约16.7k降到约8.3k/s。上位机以32包为一批接收，并将FFT从
+  8×16384降为4×8192、显示刷新降至约6.7 Hz；
+- 实板同时验证5000个IQ包和40个音频包均零丢失，IQ FIFO零溢出，IQ范围约
+  -77～77，无8位削顶；
+- raw bypass实板回归采集2,407,680点、零丢包，退出后IQ和音频均自动恢复；
+- 新位流已固化到MX25L12845G、通过回读VERIFY并从Flash重启。SHA-256：
+  `2349534F3320B6EF8E810AF335B00927AB282A509B3CD5FA2A2893E56018C7CD`；
+- 布线后WNS为+0.251 ns、WHS为+0.037 ns，所有时序约束满足，DRC无错误。
+
 ## 下一阶段
 
 按预期收益排序：
 
 1. 将门限占空比从约 0.6 精调到 0.5，建议先把上拉总阻值试为 1.47 MΩ；
-2. 在拉杆天线后增加以约 96 MHz 为中心的可调 LC 预选器；
+2. 增加对准目标台的可调预选器，并抑制实测 95.9866 MHz 强阻塞；
 3. 如果允许有源器件，在预选器后加入约 10～15 dB 的低噪声 RF 增益；
 4. FPGA 侧继续尝试自适应信道带宽、PLL 型鉴频和相位脉冲抑制。
 
 仅靠当前无增益、无预选的阻容前端，不能承诺商用收音机的灵敏度和抗阻塞
 能力。详细历史、位流哈希和交接信息见 [HANDOFF.md](HANDOFF.md)。
+
+## 数字算法剩余空间（实采 A/B）
+
+同一份 240 MS/s 原始位流与现有 WAV 的定量复核表明：可选的 4.5 kHz
+播放滤波有约 1.7～2.0 dB 净 program/noise 改善；切到 3.5 kHz 弱信号档
+约为 2.1～2.4 dB。现有相关向量鉴频已经消除了大角度相位脉冲，继续限幅在
+实采数据上是 0.00 dB，因此没有加入无效逻辑。保持音质的数字算法现实剩余
+空间约 1～3 dB；接受窄带、谱门伪影和 480 MS/s 风险时，激进上限约 4～6 dB。
+
+原始宽带谱还检测到 95.9866 MHz 强载波，它在 1-bit 比较器之前压制弱台，
+是 95.0/96.8 MHz 接收效果的主要限制。完整 dB 预算、实验门槛和可重复命令见
+[DSP_OPTIMIZATION.md](DSP_OPTIMIZATION.md)。

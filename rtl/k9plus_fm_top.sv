@@ -69,20 +69,33 @@ module k9plus_fm_top (
     // A mode request is applied only between Ethernet frames.  This prevents
     // a host command from truncating an audio or raw frame already in flight.
     logic tx_bypass_mode;
-    wire audio_tx_active, raw_tx_active;
+    wire audio_tx_active, raw_tx_active, iq_tx_active;
+    logic [1:0] tx_owner;
     always_ff @(posedge clk_eth) begin
         if (eth_rst)
             tx_bypass_mode <= 0;
-        else if (!tx_bypass_mode && net_bypass_request_eth && !audio_tx_active)
+        else if (!tx_bypass_mode && net_bypass_request_eth &&
+                 !audio_tx_active && !iq_tx_active && tx_owner == 0)
             tx_bypass_mode <= 1;
-        else if (tx_bypass_mode && !net_bypass_request_eth && !raw_tx_active)
+        else if (tx_bypass_mode && !net_bypass_request_eth &&
+                 !raw_tx_active && tx_owner == 0)
             tx_bypass_mode <= 0;
     end
 
     (* ASYNC_REG = "TRUE" *) logic bypass_meta_rf, bypass_sync_rf;
+    (* ASYNC_REG = "TRUE" *) logic eth_ready_meta_rf, eth_ready_sync_rf;
     always_ff @(posedge clk_rf) begin
-        bypass_meta_rf <= tx_bypass_mode;
-        bypass_sync_rf <= bypass_meta_rf;
+        if (rf_rst) begin
+            bypass_meta_rf <= 0;
+            bypass_sync_rf <= 0;
+            eth_ready_meta_rf <= 0;
+            eth_ready_sync_rf <= 0;
+        end else begin
+            bypass_meta_rf <= tx_bypass_mode;
+            bypass_sync_rf <= bypass_meta_rf;
+            eth_ready_meta_rf <= !eth_rst;
+            eth_ready_sync_rf <= eth_ready_meta_rf;
+        end
     end
 
     wire [7:0] raw_fifo_data;
@@ -202,6 +215,38 @@ module k9plus_fm_top (
         .valid_out(iq_valid), .i_out(cic_i), .q_out(cic_q)
     );
 
+    // Parallel wideband monitor: 240 MS/s / 40 = 6 MS/s, spanning +/-3 MHz.
+    // The original 960 kS/s receiver path above is unchanged.  A CIC is ideal
+    // here because the stream is for visualization; the host compensates its
+    // deterministic passband droop on the displayed spectrum.
+    wire wide_iq_valid;
+    wire signed [23:0] wide_i, wide_q;
+    cic3_decimator_2x #(
+        .DECIMATION_PAIRS(20), .INPUT_WIDTH(16), .ACC_WIDTH(40),
+        .OUTPUT_WIDTH(24), .OUTPUT_SHIFT(16)
+    ) spectrum_decimator (
+        .clk(clk_rf), .rst(rf_rst), .valid_in(mixer_valid),
+        .i_0(mix_i0), .q_0(mix_q0), .i_1(mix_i1), .q_1(mix_q1),
+        .valid_out(wide_iq_valid), .i_out(wide_i), .q_out(wide_q)
+    );
+
+    // Display-only signed I8/Q8 reduces the 6 MS/s stream to 96 Mbit/s.  The
+    // full-precision receiver/audio path remains completely independent.
+    wire [7:0] iq_fifo_data;
+    wire iq_fifo_empty;
+    wire [13:0] iq_fifo_count;
+    wire iq_fifo_rd_en;
+    wire [31:0] iq_overflow_rf;
+    iq_sample_cdc #(.INPUT_SHIFT(8)) iq_cdc (
+        .wr_clk(clk_rf), .wr_rst(rf_rst),
+        .enable_wr(eth_ready_sync_rf && !bypass_sync_rf),
+        .sample_valid(wide_iq_valid), .i_sample(wide_i), .q_sample(wide_q),
+        .rd_clk(clk_eth), .fifo_rst(eth_rst || tx_bypass_mode),
+        .rd_data(iq_fifo_data), .rd_en(iq_fifo_rd_en),
+        .rd_empty(iq_fifo_empty), .rd_count(iq_fifo_count),
+        .overflow_bytes(iq_overflow_rf)
+    );
+
     wire channel_valid;
     wire signed [23:0] channel_i, channel_q;
     complex_fir channel_filter (
@@ -278,6 +323,7 @@ module k9plus_fm_top (
     (* ASYNC_REG = "TRUE" *) logic [31:0] stats_meta, stats_sync;
     (* ASYNC_REG = "TRUE" *) logic [31:0] channel_stats_meta, channel_stats_sync;
     (* ASYNC_REG = "TRUE" *) logic [31:0] raw_overflow_meta, raw_overflow_sync;
+    (* ASYNC_REG = "TRUE" *) logic [31:0] iq_overflow_meta, iq_overflow_sync;
     logic pcm_valid_eth;
     always_ff @(posedge clk_eth) begin
         pcm_toggle_meta <= pcm_toggle_rf; pcm_toggle_sync <= pcm_toggle_meta;
@@ -287,6 +333,7 @@ module k9plus_fm_top (
         stats_meta <= rf_stats_hold; stats_sync <= stats_meta;
         channel_stats_meta <= channel_stats_hold; channel_stats_sync <= channel_stats_meta;
         raw_overflow_meta <= raw_overflow_rf; raw_overflow_sync <= raw_overflow_meta;
+        iq_overflow_meta <= iq_overflow_rf; iq_overflow_sync <= iq_overflow_meta;
         if (eth_rst) begin pcm_toggle_seen <= pcm_toggle_sync; pcm_valid_eth <= 0; end
         else begin
             pcm_valid_eth <= (pcm_toggle_sync != pcm_toggle_seen);
@@ -295,9 +342,10 @@ module k9plus_fm_top (
         end
     end
 
-    wire [7:0] audio_frame_byte, raw_frame_byte, eth_frame_byte;
+    wire [7:0] audio_frame_byte, raw_frame_byte, iq_frame_byte, eth_frame_byte;
     wire audio_frame_valid, audio_frame_ready, audio_frame_last;
     wire raw_frame_valid, raw_frame_ready, raw_frame_last;
+    wire iq_frame_valid, iq_frame_ready, iq_frame_last;
     wire eth_frame_valid, eth_frame_ready, eth_frame_last;
     wire [31:0] packet_count, dropped_samples;
     udp_audio_axis_tx packetizer (
@@ -321,11 +369,46 @@ module k9plus_fm_top (
         .active(raw_tx_active), .packet_count(raw_packet_count)
     );
 
-    assign eth_frame_byte = tx_bypass_mode ? raw_frame_byte : audio_frame_byte;
-    assign eth_frame_valid = tx_bypass_mode ? raw_frame_valid : audio_frame_valid;
-    assign eth_frame_last = tx_bypass_mode ? raw_frame_last : audio_frame_last;
-    assign raw_frame_ready = tx_bypass_mode && eth_frame_ready;
-    assign audio_frame_ready = !tx_bypass_mode && eth_frame_ready;
+    wire [31:0] iq_packet_count;
+    udp_iq_axis_tx iq_packetizer (
+        .clk(clk_eth), .rst(eth_rst || tx_bypass_mode), .enable(!tx_bypass_mode),
+        .tuned_hz(tune_sync), .overflow_bytes(iq_overflow_sync),
+        .fifo_data(iq_fifo_data), .fifo_empty(iq_fifo_empty),
+        .fifo_count(iq_fifo_count), .fifo_rd_en(iq_fifo_rd_en),
+        .axis_data(iq_frame_byte), .axis_valid(iq_frame_valid),
+        .axis_ready(iq_frame_ready), .axis_last(iq_frame_last),
+        .active(iq_tx_active), .packet_count(iq_packet_count)
+    );
+
+    // Lock arbitration for a complete Ethernet frame.  Audio gets priority
+    // between IQ frames, but can never cut into an IQ packet already on wire.
+    localparam [1:0] TX_NONE=2'd0, TX_AUDIO=2'd1, TX_IQ=2'd2, TX_RAW=2'd3;
+    always_ff @(posedge clk_eth) begin
+        if (eth_rst) begin
+            tx_owner <= TX_NONE;
+        end else if (tx_owner == TX_NONE) begin
+            if (tx_bypass_mode && raw_tx_active)
+                tx_owner <= TX_RAW;
+            else if (!tx_bypass_mode && audio_tx_active)
+                tx_owner <= TX_AUDIO;
+            else if (!tx_bypass_mode && iq_tx_active)
+                tx_owner <= TX_IQ;
+        end else if (eth_frame_valid && eth_frame_ready && eth_frame_last) begin
+            tx_owner <= TX_NONE;
+        end
+    end
+
+    assign eth_frame_byte = tx_owner == TX_RAW ? raw_frame_byte :
+                            tx_owner == TX_IQ ? iq_frame_byte : audio_frame_byte;
+    assign eth_frame_valid = tx_owner == TX_RAW ? raw_frame_valid :
+                             tx_owner == TX_IQ ? iq_frame_valid :
+                             tx_owner == TX_AUDIO ? audio_frame_valid : 1'b0;
+    assign eth_frame_last = tx_owner == TX_RAW ? raw_frame_last :
+                            tx_owner == TX_IQ ? iq_frame_last :
+                            tx_owner == TX_AUDIO ? audio_frame_last : 1'b0;
+    assign raw_frame_ready = tx_owner == TX_RAW && eth_frame_ready;
+    assign iq_frame_ready = tx_owner == TX_IQ && eth_frame_ready;
+    assign audio_frame_ready = tx_owner == TX_AUDIO && eth_frame_ready;
 
     wire [7:0] gmii_txd;
     wire gmii_tx_en, gmii_tx_er;
@@ -345,5 +428,6 @@ module k9plus_fm_top (
         .rgmii_tx_clk(eth_tx_clk), .rgmii_txd(eth_tx_data), .rgmii_tx_ctl(eth_tx_ctl)
     );
 
-    assign led = {audio_tx_active || raw_tx_active, tx_bypass_mode, !eth_rst, rf_locked};
+    assign led = {audio_tx_active || raw_tx_active || iq_tx_active,
+                  tx_bypass_mode, !eth_rst, rf_locked};
 endmodule

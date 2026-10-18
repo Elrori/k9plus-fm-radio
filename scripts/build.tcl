@@ -21,7 +21,9 @@ read_verilog -sv [list \
     rtl/cic3_decimator.sv \
     rtl/audio_post.sv \
     rtl/udp_audio_axis_tx.sv \
+    rtl/udp_iq_axis_tx.sv \
     rtl/udp_raw_axis_tx.sv \
+    rtl/iq_sample_cdc.sv \
     rtl/raw_sample_cdc.sv \
     rtl/rgmii_tune_rx.sv \
     rtl/rgmii_tx.sv \
