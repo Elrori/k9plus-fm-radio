@@ -19,3 +19,10 @@ jobs:
         run: python -u tests/bench_1bit_real.py
       - name: Known-tone synthetic FM sweep
         run: python -u tests/bench_1bit_synthetic.py
+      - name: Install SystemVerilog simulator
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
+      - name: Exercise lag1 / lag2 synthesizable discriminator RTL
+        run: |
+          iverilog -g2012 -s tb_fm_discriminator_lag -o /tmp/k9_lag.vvp \
+            rtl/fm_discriminator.sv rtl/cic3_decimator.sv tests/tb_fm_discriminator_lag.sv
+          vvp /tmp/k9_lag.vvp
