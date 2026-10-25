@@ -228,9 +228,9 @@ module k9plus_fm_top (
 
     // Display-only signed I8/Q8 reduces the 6 MS/s stream to 96 Mbit/s.  The
     // full-precision receiver/audio path remains completely independent.
-    wire [7:0] iq_fifo_data;
+    wire [15:0] iq_fifo_data;
     wire iq_fifo_empty;
-    wire [13:0] iq_fifo_count;
+    wire [12:0] iq_fifo_count;
     wire iq_fifo_rd_en;
     wire [31:0] iq_overflow_rf;
     iq_sample_cdc #(.INPUT_SHIFT(8)) iq_cdc (

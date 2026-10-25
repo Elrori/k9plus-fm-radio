@@ -189,9 +189,10 @@ bypass取样点位于`IBUFDS + IDDR`之后、NCO之前。240 MS/s bitstream按LS
 仓库的`ExtIO`目录提供32位`ExtIO_K9Plus_FM_6M.dll`，可把同一条6 MS/s
 `K9IQ`流直接送入HDSDR，并随HDSDR本振调谐FPGA。安装和构建步骤见
 [`ExtIO/README.md`](ExtIO/README.md)。2026-10-25已修复IQ跨时钟FIFO启动时
-多写一个旧字节造成的I/Q错位：94.8 MHz实采的相关系数为0.00036、圆度误差
-0.00073、峰值镜像抑制约60.6 dB。DLL另有约15 Hz的复数直流阻断器，用于
-去除I8量化形成的频谱中心固定峰。
+多写一个旧字节造成的I/Q错位。最终版本使用16位`{Q8,I8}`原子FIFO，从结构上
+禁止冷启动落在半个复数样本上；断电重启后94.8 MHz实采的圆度误差为0.00024，
+故意错位后为0.78571，峰值镜像抑制约71.5 dB。DLL另有约15 Hz的复数直流
+阻断器，用于去除I8量化形成的频谱中心固定峰。
 
 `K9RAW1`文件的64字节自描述头、读取方法和首批实板数据见
 [`captures/raw_2026-10-18/README.md`](captures/raw_2026-10-18/README.md)。

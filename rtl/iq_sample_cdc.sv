@@ -9,17 +9,17 @@ module iq_sample_cdc #(
     input  logic signed [23:0]      q_sample,
     input  logic                    rd_clk,
     input  logic                    fifo_rst,
-    output logic [7:0]              rd_data,
+    output logic [15:0]             rd_data,
     input  logic                    rd_en,
     output logic                    rd_empty,
-    output logic [13:0]             rd_count,
+    output logic [12:0]             rd_count,
     output logic [31:0]             overflow_bytes
 );
-    logic [15:0] pending_word;
-    logic [1:0] pending_bytes;
-    logic [7:0] fifo_din;
+    logic [15:0] fifo_din;
     logic fifo_wr_en, fifo_full;
     logic wr_rst_busy, rd_rst_busy;
+    logic [5:0] startup_guard;
+    logic stream_ready;
     logic signed [7:0] i_quantized, q_quantized;
 
     function automatic signed [7:0] quantize(input signed [23:0] value);
@@ -38,38 +38,34 @@ module iq_sample_cdc #(
     always_comb begin
         i_quantized = quantize(i_sample);
         q_quantized = quantize(q_sample);
-        // Drive the XPM FIFO directly from the pending byte. Registering both
-        // din and wr_en added a hidden one-cycle write after enable/reset was
-        // removed, inserting one stale byte and permanently swapping IQ
-        // framing at the host.
-        fifo_din = pending_word[7:0];
-        fifo_wr_en = enable_wr && !wr_rst && pending_bytes != 0 &&
+        // Cross the clock boundary as one atomic complex sample.  A byte-wide
+        // FIFO can cold-start on either byte phase if its two clock domains
+        // leave reset at different instants; a 16-bit {Q,I} word makes that
+        // failure structurally impossible.
+        fifo_din = {q_quantized, i_quantized};
+        stream_ready = startup_guard[5];
+        fifo_wr_en = enable_wr && !wr_rst && stream_ready && sample_valid &&
                      !wr_rst_busy && !fifo_full;
     end
 
     always_ff @(posedge wr_clk) begin
-        if (wr_rst || !enable_wr) begin
-            pending_word <= 0;
-            pending_bytes <= 0;
+        if (wr_rst || !enable_wr || wr_rst_busy) begin
             overflow_bytes <= 0;
+            startup_guard <= 0;
+        end else if (!stream_ready) begin
+            // At FPGA cold boot the XPM reset request crosses from the
+            // Ethernet clock domain.  wr_rst_busy can initially read low for
+            // a few RF clocks before the reset reaches this domain.  Do not
+            // accept a partial I/Q word during that window: require 32 clean
+            // clocks after the final busy interval.  JTAG configuration and
+            // SPI-flash boot then start on the same byte boundary.
+            overflow_bytes <= 0;
+            startup_guard <= startup_guard + 1'b1;
         end else begin
-            if (pending_bytes != 0) begin
-                if (!wr_rst_busy && !fifo_full) begin
-                    pending_word <= {8'h00, pending_word[15:8]};
-                    pending_bytes <= pending_bytes - 1'b1;
-                end else if (!wr_rst_busy && fifo_full) begin
-                    // Count bytes, not samples, to match the packet header.
-                    overflow_bytes <= overflow_bytes + 1'b1;
-                    pending_word <= {8'h00, pending_word[15:8]};
-                    pending_bytes <= pending_bytes - 1'b1;
-                end
-            end else if (sample_valid) begin
-                // Signed I8,Q8 display samples.  Reducing the monitor stream
-                // to two bytes/sample halves both network bandwidth and host
-                // packet rate; it never enters the audio DSP path.
-                pending_word <= {q_quantized, i_quantized};
-                pending_bytes <= 2'd2;
-            end
+            // The public counter remains byte-based even though the FIFO now
+            // drops a complete complex sample atomically.
+            if (sample_valid && !wr_rst_busy && fifo_full)
+                overflow_bytes <= overflow_bytes + 2;
         end
     end
 
@@ -79,19 +75,19 @@ module iq_sample_cdc #(
         .ECC_MODE("no_ecc"),
         .FIFO_MEMORY_TYPE("block"),
         .FIFO_READ_LATENCY(0),
-        .FIFO_WRITE_DEPTH(8192),
+        .FIFO_WRITE_DEPTH(4096),
         .FULL_RESET_VALUE(0),
         .PROG_EMPTY_THRESH(10),
-        .PROG_FULL_THRESH(8000),
-        .RD_DATA_COUNT_WIDTH(14),
-        .READ_DATA_WIDTH(8),
+        .PROG_FULL_THRESH(4000),
+        .RD_DATA_COUNT_WIDTH(13),
+        .READ_DATA_WIDTH(16),
         .READ_MODE("fwft"),
         .RELATED_CLOCKS(0),
         .SIM_ASSERT_CHK(0),
         .USE_ADV_FEATURES("0707"),
         .WAKEUP_TIME(0),
-        .WRITE_DATA_WIDTH(8),
-        .WR_DATA_COUNT_WIDTH(14)
+        .WRITE_DATA_WIDTH(16),
+        .WR_DATA_COUNT_WIDTH(13)
     ) iq_fifo (
         .almost_empty(), .almost_full(), .data_valid(), .dbiterr(),
         .dout(rd_data), .empty(rd_empty), .full(fifo_full),

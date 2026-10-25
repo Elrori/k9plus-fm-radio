@@ -7,9 +7,9 @@ module udp_iq_axis_tx #(
     input  logic        enable,
     input  logic [31:0] tuned_hz,
     input  logic [31:0] overflow_bytes,
-    input  logic [7:0]  fifo_data,
+    input  logic [15:0] fifo_data,
     input  logic        fifo_empty,
-    input  logic [13:0] fifo_count,
+    input  logic [12:0] fifo_count,
     output logic        fifo_rd_en,
     output logic [7:0]  axis_data,
     output logic        axis_valid,
@@ -109,8 +109,10 @@ module udp_iq_axis_tx #(
                 30: axis_data=latched_overflow[23:16];
                 31: axis_data=latched_overflow[31:24];
                 default: begin
-                    axis_data = fifo_data;
-                    fifo_rd_en = active && axis_ready && !fifo_empty;
+                    // The CDC FIFO stores an atomic {Q,I} word.  Hold the word
+                    // for the I byte and pop it only after the Q byte.
+                    axis_data = payload_offset[0] ? fifo_data[15:8] : fifo_data[7:0];
+                    fifo_rd_en = active && axis_ready && !fifo_empty && payload_offset[0];
                 end
             endcase
         end
@@ -127,7 +129,7 @@ module udp_iq_axis_tx #(
             transmitted_samples <= 0;
             latched_sample_index <= 0;
         end else begin
-            if (!active && fifo_count >= IQ_BYTES) begin
+            if (!active && fifo_count >= IQ_SAMPLES) begin
                 active <= 1;
                 byte_index <= 0;
                 latched_sequence <= packet_count;
