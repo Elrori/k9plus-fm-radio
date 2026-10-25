@@ -2,9 +2,9 @@ set_property PACKAGE_PIN W19 [get_ports clk_25m]
 set_property IOSTANDARD LVCMOS33 [get_ports clk_25m]
 create_clock -name board_clk_25m -period 40.000 [get_ports clk_25m]
 
-# U4-8/U4-12, Bank 15 IO_L11P/N_T1_SRCC_15.
-set_property PACKAGE_PIN J20 [get_ports rf_p]
-set_property PACKAGE_PIN J21 [get_ports rf_n]
+# Expansion IO2[32:33], Bank 35 IO_L2P/N_T0_AD12P/N_35.
+set_property PACKAGE_PIN C2 [get_ports rf_p]
+set_property PACKAGE_PIN B2 [get_ports rf_n]
 set_property IOSTANDARD LVDS_25 [get_ports {rf_p rf_n}]
 set_property DIFF_TERM FALSE [get_ports {rf_p rf_n}]
 set_false_path -from [get_ports {rf_p rf_n}]

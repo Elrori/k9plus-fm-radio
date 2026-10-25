@@ -1,5 +1,27 @@
 # K9+ FPGA 1-bit FM 收音机交接单
 
+## HDSDR IQ 镜像修复里程碑（2026-10-25，Asia/Shanghai）
+
+- RF输入已由分散的J20/J21迁到真正的差分对C2/B2（Bank 35
+  `IO_L2P/N`），原阻容网络不变，实测RF_P=1.192 V、RF_N=1.190 V。
+- 已提供32位HDSDR ExtIO：`ExtIO/Release/ExtIO_K9Plus_FM_6M.dll`，接收
+  UDP/50003的6 MS/s I8/Q8数据，并能通过UDP/50001改变FPGA本振。回调块由
+  1440改为4096点后，HDSDR频谱不再卡住或重复同一波形。
+- “6 MHz内同一电台出现两次”的根因不是FM解调，而是`iq_sample_cdc`把
+  FIFO的`din`和`wr_en`同时寄存，模式启动/复位边缘额外写入一个旧字节，令
+  后续I/Q永远错开一字节。现改为由待发送字节直接驱动FIFO，并加入
+  `tb_iq_sample_cdc.sv`覆盖首次启动和复位后的字节顺序。
+- 修复前实采I/Q相关系数约-0.63、圆度误差约0.63；修复后94.8 MHz、
+  1,048,576点实测相关系数0.00036、圆度误差0.00073、FFT峰值镜像抑制
+  60.56 dB。故意错开一字节后相关系数重新恶化到-0.48070，确认字节边界已
+  正确。1200个包零丢失、FIFO零溢出。
+- 频谱中心固定峰来自I8量化约-0.5 LSB的直流偏置；ExtIO加入约15 Hz截止的
+  复数一阶直流阻断器，不改变FPGA音频路径。
+- 新位流已通过JTAG下载，最后调谐为94.8 MHz。位流SHA-256：
+  `4508F8949A5AD2988CBDD8D339462184E22E9EFB4A1D3AE8D6E4E13F00897236`。
+- 已安装的ExtIO DLL SHA-256：
+  `08398B8839F8F33A4C842DBAAB4229634D20DF963921B556AADF4C5445BCD996`。
+
 ## 6 MHz轻量统一上位机里程碑（2026-10-18 16:20，Asia/Shanghai）
 
 - 新增并行6 MS/s复数IQ监视链，取自NCO混频后独立40:1 CIC，不改变原960 kS/s
@@ -277,7 +299,9 @@ documented in `hardware/WIRING.md`.
 ## Frozen architecture
 
 - FPGA: XC7A50T-FGG484-1; board clock W19 at 25 MHz.
-- RF input: U4-8/J20 `RF_P`, U4-12/J21 `RF_N`, `IBUFDS` plus IDDR.
+- RF input was moved on 2026-10-25 to C2 `RF_P` / B2 `RF_N`, the true Bank 35
+  `IO_L2P/N` pair, using the same `IBUFDS` plus IDDR. Earlier captures and DC
+  measurements in this document were made on J20/J21.
 - RF rate: 240 MS/s effective (120 MHz DDR), avoiding the 200 MS/s Nyquist-zone
   overlap of the earlier experiment.
 - Mode: broadcast FM mono. A hard-limited 1-bit stream retains FM crossing

@@ -22,8 +22,8 @@
 |---|---|
 | FPGA | `xc7a50tfgg484-1` |
 | 板载时钟 | W19，25 MHz |
-| RF_P | U4-8 / FPGA J20 |
-| RF_N | U4-12 / FPGA J21 |
+| RF_P | FPGA C2 / `exter_io2[32]` |
+| RF_N | FPGA B2 / `exter_io2[33]` |
 | 以太网 | **U11 后方的 RJ45** |
 | PHY RXC | FPGA V4 |
 | PHY 复位 | W22，高电平解除复位 |
@@ -42,13 +42,13 @@
                           |
                          GND
 
-拉杆天线 ── 1nF C0G ── 100Ω ──+── RF_P (U4-8 / J20)
+拉杆天线 ── 1nF C0G ── 100Ω ──+── RF_P (C2)
                                  |
                                  +── 1kΩ ── VBIAS
                                  |
                                  +── 1MΩ ── 3.3V
 
-RF_N (U4-12 / J21) ─────────────── VBIAS
+RF_N (B2) ───────────────────────── VBIAS
 拉杆底座/回流 ──────────────────── GND
 ```
 
@@ -183,6 +183,15 @@ bypass取样点位于`IBUFDS + IDDR`之后、NCO之前。240 MS/s bitstream按LS
 上位机每32包批量转换并写入环形缓冲，避免逐包加锁。该流只用于频谱/瀑布显示，
 不会进入或改变原有960 kS/s信道滤波、FM鉴频和48 kS/s音频链。进入raw bypass
 时暂停`K9IQ`，避免与240 MS/s原始抓取争用带宽。
+
+### HDSDR 接入
+
+仓库的`ExtIO`目录提供32位`ExtIO_K9Plus_FM_6M.dll`，可把同一条6 MS/s
+`K9IQ`流直接送入HDSDR，并随HDSDR本振调谐FPGA。安装和构建步骤见
+[`ExtIO/README.md`](ExtIO/README.md)。2026-10-25已修复IQ跨时钟FIFO启动时
+多写一个旧字节造成的I/Q错位：94.8 MHz实采的相关系数为0.00036、圆度误差
+0.00073、峰值镜像抑制约60.6 dB。DLL另有约15 Hz的复数直流阻断器，用于
+去除I8量化形成的频谱中心固定峰。
 
 `K9RAW1`文件的64字节自描述头、读取方法和首批实板数据见
 [`captures/raw_2026-10-18/README.md`](captures/raw_2026-10-18/README.md)。

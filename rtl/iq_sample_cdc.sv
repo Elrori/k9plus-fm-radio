@@ -38,23 +38,25 @@ module iq_sample_cdc #(
     always_comb begin
         i_quantized = quantize(i_sample);
         q_quantized = quantize(q_sample);
+        // Drive the XPM FIFO directly from the pending byte. Registering both
+        // din and wr_en added a hidden one-cycle write after enable/reset was
+        // removed, inserting one stale byte and permanently swapping IQ
+        // framing at the host.
+        fifo_din = pending_word[7:0];
+        fifo_wr_en = enable_wr && !wr_rst && pending_bytes != 0 &&
+                     !wr_rst_busy && !fifo_full;
     end
 
     always_ff @(posedge wr_clk) begin
         if (wr_rst || !enable_wr) begin
             pending_word <= 0;
             pending_bytes <= 0;
-            fifo_din <= 0;
-            fifo_wr_en <= 0;
             overflow_bytes <= 0;
         end else begin
-            fifo_wr_en <= 0;
             if (pending_bytes != 0) begin
                 if (!wr_rst_busy && !fifo_full) begin
-                    fifo_din <= pending_word[7:0];
                     pending_word <= {8'h00, pending_word[15:8]};
                     pending_bytes <= pending_bytes - 1'b1;
-                    fifo_wr_en <= 1;
                 end else if (!wr_rst_busy && fifo_full) begin
                     // Count bytes, not samples, to match the packet header.
                     overflow_bytes <= overflow_bytes + 1'b1;

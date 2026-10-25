@@ -11,3 +11,7 @@ __pycache__/
 /*.pb
 /usage_statistics_webtalk.html
 /usage_statistics_webtalk.xml
+/ExtIO/build/
+/ExtIO/*.log
+/ExtIO/Release/*
+!/ExtIO/Release/ExtIO_K9Plus_FM_6M.dll
