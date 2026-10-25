@@ -211,18 +211,24 @@ module k9plus_fm_top (
         .valid_out(iq_valid), .i_out(cic_i), .q_out(cic_q)
     );
 
-    // Parallel wideband monitor: 240 MS/s / 40 = 6 MS/s, spanning +/-3 MHz.
-    // The original 960 kS/s receiver path above is unchanged.  A CIC is ideal
-    // here because the stream is for visualization; the host compensates its
-    // deterministic passband droop on the displayed spectrum.
+    // HDSDR DFE: CIC /20 -> 12 MS/s -> compensated anti-alias FIR /2.
+    // Guaranteed useful passband is +/-2.4 MHz at the unchanged 6 MS/s rate.
     wire wide_iq_valid;
     wire signed [23:0] wide_i, wide_q;
+    wire wide_cic_valid;
+    wire signed [23:0] wide_cic_i, wide_cic_q;
     cic3_decimator_2x #(
-        .DECIMATION_PAIRS(20), .INPUT_WIDTH(16), .ACC_WIDTH(40),
-        .OUTPUT_WIDTH(24), .OUTPUT_SHIFT(16)
+        .DECIMATION_PAIRS(10), .INPUT_WIDTH(16), .ACC_WIDTH(40),
+        .OUTPUT_WIDTH(24), .OUTPUT_SHIFT(13)
     ) spectrum_decimator (
         .clk(clk_rf), .rst(rf_rst), .valid_in(mixer_valid),
         .i_0(mix_i0), .q_0(mix_q0), .i_1(mix_i1), .q_1(mix_q1),
+        .valid_out(wide_cic_valid), .i_out(wide_cic_i), .q_out(wide_cic_q)
+    );
+
+    wide_fir_dec2 wide_filter (
+        .clk(clk_rf), .rst(rf_rst), .valid_in(wide_cic_valid),
+        .i_in(wide_cic_i), .q_in(wide_cic_q),
         .valid_out(wide_iq_valid), .i_out(wide_i), .q_out(wide_q)
     );
 
@@ -366,7 +372,7 @@ module k9plus_fm_top (
     );
 
     wire [31:0] iq_packet_count;
-    udp_iq_axis_tx iq_packetizer (
+    udp_iq_axis_tx #(.COMPENSATED_DFE(1)) iq_packetizer (
         .clk(clk_eth), .rst(eth_rst || tx_bypass_mode), .enable(!tx_bypass_mode),
         .tuned_hz(tune_sync), .overflow_bytes(iq_overflow_sync),
         .fifo_data(iq_fifo_data), .fifo_empty(iq_fifo_empty),

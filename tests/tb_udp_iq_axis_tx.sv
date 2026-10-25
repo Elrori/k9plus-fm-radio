@@ -10,7 +10,7 @@ module tb_udp_iq_axis_tx;
     integer fd;
     always #4 clk=~clk;
 
-    udp_iq_axis_tx dut (
+    udp_iq_axis_tx #(.COMPENSATED_DFE(1)) dut (
         .clk, .rst, .enable, .tuned_hz(32'd96_800_000),
         .overflow_bytes(32'd0), .fifo_data, .fifo_empty, .fifo_count,
         .fifo_rd_en, .axis_data(data), .axis_valid(valid),

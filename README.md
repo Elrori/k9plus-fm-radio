@@ -1,5 +1,12 @@
 # Colorlight K9+ FPGA 1-bit FM 收音机
 
+2026-10-25 DFE更新：HDSDR/IQ支路改为240→12 MS/s CIC3，再经63tap补偿及
+抗混叠FIR抽取到6 MS/s；有效平坦通带为±2.4MHz，UDP仍为I8/Q8，flags bit2
+标识新DFE。下文历史的“单级CIC /40、显示补偿”描述仅适用于旧位流。
+实测根因证据、可实施前端接线与验收条件见
+[前端整改报告](hardware/FRONTEND_ACTION_PLAN_2026-10-25.md)。新DFE不能恢复
+比较器之前被噪声/强干扰损伤的弱台，不承诺96.8MHz灵敏度提升。
+
 本项目使用 Colorlight K9+、XI050CD 类底板和 FPGA 内部 LVDS 输入实现
 1-bit FM 接收机。天线信号由 LVDS 输入充当过零比较器采样，FPGA 完成数字
 下变频、信道滤波、FM 解调和音频处理，再通过底板 U11 后方的千兆网口发送

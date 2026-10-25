@@ -1,0 +1,25 @@
+{
+  "packets": 5000,
+  "missing": 0,
+  "index_gaps": 0,
+  "lo_hz": 87300000,
+  "flags": [
+    6
+  ],
+  "overflow_start": 0,
+  "overflow_end": 0,
+  "min": -65.0,
+  "max": 65.0,
+  "std": [
+    11.541840078597149,
+    11.544949274053808
+  ],
+  "circularity": 0.0005063281070821789,
+  "clip_fraction": 0.0,
+  "channels": {
+    "87500000": {
+      "total_over_local_median_db": 10.817711114477754,
+      "peak_hz": 87499951.171875
+    }
+  }
+}

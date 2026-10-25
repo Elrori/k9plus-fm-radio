@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
 module udp_iq_axis_tx #(
-    parameter integer IQ_BYTES = 1440
+    parameter integer IQ_BYTES = 1440,
+    parameter bit COMPENSATED_DFE = 0
 ) (
     input  logic        clk,
     input  logic        rst,
@@ -81,8 +82,9 @@ module udp_iq_axis_tx #(
             case (payload_offset)
                 0: axis_data=8'h4b; 1: axis_data=8'h39; 2: axis_data=8'h49; 3: axis_data=8'h51;
                 4: axis_data=8'h02;
-                // bit0=FIFO overflow, bit1=signed I8/Q8 payload
-                5: axis_data=8'h02 | ((latched_overflow != 0) ? 8'h01 : 8'h00);
+                // bit0=FIFO overflow, bit1=I8/Q8, bit2=flat +/-2.4 MHz DFE
+                5: axis_data=8'h02 | (COMPENSATED_DFE ? 8'h04 : 8'h00) |
+                             ((latched_overflow != 0) ? 8'h01 : 8'h00);
                 6: axis_data=8'h20; 7: axis_data=8'h00;
                 8: axis_data=latched_sequence[7:0];
                 9: axis_data=latched_sequence[15:8];

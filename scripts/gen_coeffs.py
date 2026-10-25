@@ -43,6 +43,28 @@ def main() -> None:
     quantized[(len(quantized) - 1) // 2] += (1 << 18) - int(np.sum(quantized))
     write_twos_complement(MEM / "channel_fir_q18.mem", quantized, 20)
 
+    # Type-I least-squares lowpass: compensate CIC3 /20 over +/-2.4 MHz,
+    # reject 3.6..6 MHz before the final /2. NumPy-only, deterministic.
+    f = np.r_[np.linspace(0, 2.4e6, 800), np.linspace(3.6e6, 6e6, 800)]
+    basis = np.cos(2*np.pi*f[:, None]/12e6 * np.arange(32))
+    cic = (np.sinc(f[:800]/12e6) / np.sinc(f[:800]/240e6)) ** 3
+    desired = np.r_[1/cic, np.zeros(800)]
+    weight = np.r_[np.ones(800), np.full(800, 10)]
+    a = np.linalg.lstsq(basis*weight[:, None], desired*weight, rcond=None)[0]
+    wide = np.r_[a[:0:-1]/2, a[0], a[1:]/2]
+    wide_q = np.rint(wide * 65536).astype(np.int64)
+    wide_q[31] += 65536 - int(wide_q.sum())
+    write_twos_complement(MEM / "wide_fir_q16.mem", wide_q, 18)
+    # Constant-index parallel multipliers: Vivado 2019.1 can optimize the
+    # partially used readmemh array away before applying its initialization.
+    # A generated constant function avoids that synthesis/simulation mismatch.
+    (MEM / "wide_coeffs.vh").write_text(
+        "function automatic signed [17:0] wide_coeff(input integer index);\n"
+        "begin\ncase(index)\n" + "".join(
+            f"{i}: wide_coeff = 18'sh{int(v)&0x3ffff:05x};\n"
+            for i, v in enumerate(wide_q[:32])) +
+        "default: wide_coeff = 0;\nendcase\nend\nendfunction\n", encoding="ascii")
+
     print(f"generated {len(sine)} NCO entries")
     print(f"generated {len(quantized)} FIR taps, q18 sum={int(np.sum(quantized))}")
 

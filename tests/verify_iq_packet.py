@@ -36,7 +36,7 @@ def main() -> None:
     payload = frame[42:]
     magic, version, flags, header_bytes, sequence, tuned_hz, rate, \
         sample_index, overflow = HEADER.unpack_from(payload)
-    assert (magic, version, flags, header_bytes) == (b"K9IQ", 2, 2, 32)
+    assert (magic, version, flags, header_bytes) == (b"K9IQ", 2, 6, 32)
     assert (sequence, tuned_hz, rate, sample_index, overflow) == \
         (0, 96_800_000, 6_000_000, 0, 0)
     assert payload[32:] == bytes(index & 0xFF for index in range(1440))

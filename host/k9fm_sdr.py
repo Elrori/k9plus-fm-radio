@@ -166,6 +166,8 @@ def iq_receive_loop(state: ReceiverState, bind: str, stop: threading.Event) -> N
                 last_sample = expected_sample
                 last_station = station
                 last_overflow = overflow if flags & 1 else 0
+                with state.lock:
+                    state.iq_compensated = bool(flags & 4)
                 packet_count += 1
             if not packed:
                 continue
@@ -385,7 +387,11 @@ def main() -> None:
             transforms = np.fft.fftshift(np.fft.fft(frames, axis=1), axes=1)
             scale = max(float(np.sum(window)) * 128.0, 1.0)
             power = np.mean(np.abs(transforms / scale) ** 2, axis=0)
-            spectrum = 10.0 * np.log10(np.maximum(power, 1e-14)) + correction
+            with state.lock:
+                compensated = getattr(state, "iq_compensated", False)
+            spectrum = 10.0 * np.log10(np.maximum(power, 1e-14))
+            if not compensated:
+                spectrum += correction
             spectrum = spectrum.reshape(display_bins, -1).mean(axis=1)
             waterfall[:-1] = waterfall[1:]
             waterfall[-1] = spectrum

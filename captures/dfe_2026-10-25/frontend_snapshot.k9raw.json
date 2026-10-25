@@ -1,0 +1,15 @@
+{
+  "format": "K9RAW1",
+  "captured_utc": "2026-10-25T09:35:28.712518+00:00",
+  "frequency_hz": 89949311,
+  "sample_rate_hz": 240000000,
+  "bit_order": "LSB-first; chronological; IDDR Q1 then Q2",
+  "first_packet_sequence": 0,
+  "first_sample_index": 0,
+  "sample_count": 12003840,
+  "duration_seconds": 0.050016,
+  "received_packets": 1042,
+  "missing_packets": 0,
+  "fifo_overflow_bytes": 0,
+  "sha256": "DEB1D001B87E0BC3D4456F6F60A832F70E60B699575C14F07639D3AD6C52A150"
+}

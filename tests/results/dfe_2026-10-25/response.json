@@ -1,0 +1,6 @@
+{
+  "passband_min_db": -0.0008140393802980703,
+  "passband_max_db": 0.0010993412022377441,
+  "final_decimator_stopband_max_db": -84.57019085388518,
+  "first_cic_worst_alias_relative_db": -36.059268763903695
+}

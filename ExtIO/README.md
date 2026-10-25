@@ -17,8 +17,11 @@
 ```
 
 把`ExtIO\Release\ExtIO_K9Plus_FM_6M.dll`复制到32位HDSDR安装目录，重新启动
-HDSDR并选择`K9+ FM 6M / UDP IQ8`。HDSDR显示带宽为5.4 MHz，硬件采样率为
+HDSDR并选择`K9+ FM 6M / UDP IQ8`。HDSDR声明有效带宽为4.8 MHz，硬件采样率为
 6 MHz；初始中心频率95 MHz，可在0～120 MHz内调谐。
+
+2026-10-25新DFE采用CIC /20与63tap补偿抗混叠FIR /2，平坦通带±2.4MHz。
+flags bit2标识此模式，旧DLL仍能接收新位流；新的DLL收窄声明的有效带宽。
 
 运行HDSDR前应关闭`k9fm_sdr.py`等占用UDP/50003的程序。Windows通常会把广播
 包复制给多个`SO_REUSEADDR`套接字，但独占运行更便于判断丢包和性能。

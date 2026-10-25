@@ -16,6 +16,7 @@ read_verilog -sv [list \
     rtl/clock_gen.sv \
     rtl/nco_mixer_2x.sv \
     rtl/cic3_decimator_2x.sv \
+    rtl/wide_fir_dec2.sv \
     rtl/complex_fir.sv \
     rtl/fm_discriminator.sv \
     rtl/cic3_decimator.sv \

@@ -1,0 +1,26 @@
+{
+  "87500000.0": {
+    "old": {
+      "channel_over_local_median_db": 5.165690065461713,
+      "quantization_error_below_local_noise_db": 30.255018550000553,
+      "clip_fraction": 0.0
+    },
+    "new": {
+      "channel_over_local_median_db": 5.028775748117091,
+      "quantization_error_below_local_noise_db": 30.420851679105443,
+      "clip_fraction": 0.0
+    }
+  },
+  "96800000.0": {
+    "old": {
+      "channel_over_local_median_db": 0.9563933498761394,
+      "quantization_error_below_local_noise_db": 30.490153409515166,
+      "clip_fraction": 0.0
+    },
+    "new": {
+      "channel_over_local_median_db": 0.8003687572070937,
+      "quantization_error_below_local_noise_db": 30.751699808679373,
+      "clip_fraction": 0.0
+    }
+  }
+}

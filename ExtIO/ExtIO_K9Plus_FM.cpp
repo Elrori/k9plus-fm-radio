@@ -294,7 +294,7 @@ __declspec(dllexport) int __stdcall ExtIoGetSrates(int index, double *rate) {
 __declspec(dllexport) int __stdcall ExtIoGetActualSrateIdx() { return 0; }
 __declspec(dllexport) int __stdcall ExtIoSetSrate(int index) { return index == 0 ? 0 : 1; }
 __declspec(dllexport) long __stdcall ExtIoGetBandwidth(int index) {
-    return index == 0 ? 5400000 : 0;
+    return index == 0 ? 4800000 : 0;
 }
 __declspec(dllexport) void __stdcall ShowGUI() {}
 __declspec(dllexport) void __stdcall HideGUI() {}
